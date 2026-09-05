@@ -1378,11 +1378,11 @@ class MainWindow(QMainWindow):
         self.employees = CrudPage(self.db, "employees")
         self.types = CrudPage(self.db, "work_types")
         self.statistics = StatisticsPage(self.db)
-        for page in (self.daily, self.employees, self.types, self.statistics):
+        for page in (self.statistics, self.daily, self.employees, self.types):
             self.stack.addWidget(page)
 
         self.buttons = []
-        labels = ("Kunlik hisob", "Xodimlar", "Ish turlari", "Statistika")
+        labels = ("Statistika", "Kunlik hisob", "Xodimlar", "Ish turlari")
         for index, label in enumerate(labels):
             nav_button = button(label, "nav")
             nav_button.setMinimumHeight(44)
@@ -1415,9 +1415,9 @@ class MainWindow(QMainWindow):
             nav_button.style().unpolish(nav_button)
             nav_button.style().polish(nav_button)
         if index == 0:
-            self.daily.load()
-        elif index == 3:
             self.statistics.load()
+        elif index == 1:
+            self.daily.load()
 
 
 if __name__ == "__main__":
