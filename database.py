@@ -111,3 +111,38 @@ class Database:
             """,
             (employee_id, date_from, date_to),
         ).fetchall()
+
+    def statistics_work_types(self, date_from, date_to):
+        return self.connection.execute(
+            """
+            SELECT w.id, w.name, SUM(d.quantity) AS total
+            FROM daily_entries AS d
+            JOIN work_types AS w ON w.id = d.work_type_id
+            WHERE d.work_date BETWEEN ? AND ?
+            GROUP BY w.id, w.name
+            HAVING SUM(d.quantity) > 0
+            ORDER BY w.name
+            """,
+            (date_from, date_to),
+        ).fetchall()
+
+    def employee_work_type_totals(self, date_from, date_to):
+        return self.connection.execute(
+            """
+            SELECT
+                e.id AS employee_id,
+                e.first_name,
+                e.last_name,
+                w.id AS work_type_id,
+                w.name AS work_type_name,
+                SUM(d.quantity) AS total
+            FROM daily_entries AS d
+            JOIN employees AS e ON e.id = d.employee_id
+            JOIN work_types AS w ON w.id = d.work_type_id
+            WHERE d.work_date BETWEEN ? AND ?
+            GROUP BY e.id, e.first_name, e.last_name, w.id, w.name
+            HAVING SUM(d.quantity) > 0
+            ORDER BY e.last_name, e.first_name, w.name
+            """,
+            (date_from, date_to),
+        ).fetchall()

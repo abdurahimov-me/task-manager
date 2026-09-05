@@ -1,5 +1,6 @@
 import sqlite3
 import sys
+from pathlib import Path
 
 from PySide6.QtCharts import (
     QAbstractBarSeries,
@@ -7,16 +8,18 @@ from PySide6.QtCharts import (
     QBarSet,
     QChart,
     QChartView,
+    QDateTimeAxis,
     QHorizontalBarSeries,
-    QStackedBarSeries,
+    QLineSeries,
     QValueAxis,
 )
-from PySide6.QtCore import QDate, QLocale, QMargins, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QFont, QPainter, QPen
+from PySide6.QtCore import QDate, QDateTime, QLocale, QMargins, QTime, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDateEdit,
     QDialog,
     QFrame,
@@ -165,7 +168,7 @@ QLabel#metricValue {
 QLabel#metricValue[accent="true"] {
     color: #2f6fed;
 }
-QLineEdit, QDateEdit {
+QLineEdit, QDateEdit, QComboBox {
     background: #ffffff;
     color: #1d2939;
     border: 1px solid #d0d5dd;
@@ -174,15 +177,29 @@ QLineEdit, QDateEdit {
     selection-background-color: #dbe7ff;
     min-height: 22px;
 }
-QLineEdit:hover, QDateEdit:hover {
+QLineEdit:hover, QDateEdit:hover, QComboBox:hover {
     border-color: #98a2b3;
 }
-QLineEdit:focus, QDateEdit:focus {
+QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
     border: 1px solid #2f6fed;
 }
 QDateEdit::drop-down {
     width: 24px;
     border: 0;
+}
+QComboBox::drop-down {
+    width: 28px;
+    border: 0;
+}
+QComboBox QAbstractItemView {
+    background: #ffffff;
+    color: #344054;
+    border: 1px solid #d0d5dd;
+    border-radius: 7px;
+    padding: 4px;
+    selection-background-color: #eef4ff;
+    selection-color: #1d2939;
+    outline: 0;
 }
 QCheckBox {
     color: #475467;
@@ -356,6 +373,11 @@ UZ_MONTHS = (
 )
 
 
+def resource_path(relative_path):
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / relative_path
+
+
 def button(text, object_name, callback=None):
     control = QPushButton(text)
     control.setObjectName(object_name)
@@ -375,6 +397,68 @@ def configure_table(table):
     table.verticalHeader().setVisible(False)
     table.verticalHeader().setDefaultSectionSize(47)
     table.horizontalHeader().setHighlightSections(False)
+
+
+class QuantityTable(QTableWidget):
+    MAX_QUANTITY = 999_999_999
+
+    def __init__(self):
+        super().__init__()
+        self.typing_cell = None
+        self.typing_buffer = ""
+        self.typing_timer = QTimer(self)
+        self.typing_timer.setSingleShot(True)
+        self.typing_timer.setInterval(1200)
+        self.typing_timer.timeout.connect(self.reset_typing)
+
+    def reset_typing(self):
+        self.typing_cell = None
+        self.typing_buffer = ""
+
+    def keyPressEvent(self, event):
+        row, column = self.currentRow(), self.currentColumn()
+        if row >= 0 and column > 0:
+            cell = (row, column)
+            text = event.text()
+
+            if len(text) == 1 and text in "0123456789":
+                if self.typing_cell != cell or not self.typing_timer.isActive():
+                    self.typing_buffer = ""
+                candidate = (self.typing_buffer + text).lstrip("0") or "0"
+                value = min(int(candidate), self.MAX_QUANTITY)
+                self.typing_buffer = str(value)
+                self.typing_cell = cell
+                self.item(row, column).setText(self.typing_buffer)
+                self.typing_timer.start()
+                event.accept()
+                return
+
+            if event.key() == Qt.Key_Backspace:
+                if self.typing_cell != cell or not self.typing_timer.isActive():
+                    self.typing_buffer = self.item(row, column).text()
+                self.typing_buffer = self.typing_buffer[:-1] or "0"
+                self.typing_cell = cell
+                self.item(row, column).setText(self.typing_buffer)
+                self.typing_timer.start()
+                event.accept()
+                return
+
+            if event.key() == Qt.Key_Delete:
+                self.item(row, column).setText("0")
+                self.reset_typing()
+                event.accept()
+                return
+
+        self.reset_typing()
+        super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        self.reset_typing()
+        super().mousePressEvent(event)
+
+    def focusOutEvent(self, event):
+        self.reset_typing()
+        super().focusOutEvent(event)
 
 
 class MetricCard(QFrame):
@@ -702,7 +786,7 @@ class DailyPage(QWidget):
         headings.setSpacing(4)
         title = QLabel("Kunlik hisob")
         title.setObjectName("title")
-        subtitle = QLabel("Bajarilgan ishlar sonini jadvalga kiriting")
+        subtitle = QLabel("Katakni tanlang va bajarilgan ishlar sonini klaviaturadan kiriting")
         subtitle.setObjectName("subtitle")
         headings.addWidget(title)
         headings.addWidget(subtitle)
@@ -757,15 +841,10 @@ class DailyPage(QWidget):
         table_header_layout.addWidget(self.save_state)
         card_layout.addWidget(table_header)
 
-        self.table = QTableWidget()
+        self.table = QuantityTable()
         configure_table(self.table)
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
-        self.table.setEditTriggers(
-            QAbstractItemView.DoubleClicked
-            | QAbstractItemView.SelectedClicked
-            | QAbstractItemView.EditKeyPressed
-            | QAbstractItemView.AnyKeyPressed
-        )
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.itemChanged.connect(self.save)
         card_layout.addWidget(self.table)
         self.empty_state = EmptyState(
@@ -873,12 +952,15 @@ class StatisticsPage(QWidget):
         self.employee_rows = []
         self.chart_employee_rows = []
         self.selected_employee_id = None
-        self.employee_bar_set = None
+        self.selected_work_type_id = None
+        self.employee_bar_sets = []
+        self.period_employee_work = []
+        self.work_types = []
         self.daily_days = []
         self.daily_day_totals = []
-        self.daily_work_types = {}
+        self.daily_all_totals = []
+        self.daily_work_type_totals = {}
         self.daily_number_of_days = 0
-        self.daily_work_type_count = 0
 
         root = QVBoxLayout(self)
         root.setContentsMargins(34, 27, 34, 26)
@@ -896,9 +978,11 @@ class StatisticsPage(QWidget):
 
         filters = QFrame()
         filters.setObjectName("surface")
-        filter_layout = QHBoxLayout(filters)
-        filter_layout.setContentsMargins(16, 11, 16, 11)
-        filter_layout.setSpacing(12)
+        filter_root = QVBoxLayout(filters)
+        filter_root.setContentsMargins(16, 10, 16, 9)
+        filter_root.setSpacing(8)
+        date_filter_layout = QHBoxLayout()
+        date_filter_layout.setSpacing(12)
 
         today = QDate.currentDate()
         self.date_from = QDateEdit(today.addDays(-29))
@@ -922,18 +1006,32 @@ class StatisticsPage(QWidget):
         to_box.addWidget(to_label)
         to_box.addWidget(self.date_to)
 
-        filter_layout.addLayout(from_box)
+        date_filter_layout.addLayout(from_box)
         separator = QLabel("—")
         separator.setObjectName("muted")
-        filter_layout.addWidget(separator, 0, Qt.AlignBottom)
-        filter_layout.addLayout(to_box)
-        filter_layout.addStretch()
+        date_filter_layout.addWidget(separator, 0, Qt.AlignBottom)
+        date_filter_layout.addLayout(to_box)
+
+        work_filter_box = QVBoxLayout()
+        work_filter_box.setSpacing(4)
+        work_filter_label = QLabel("Ish turi")
+        work_filter_label.setObjectName("fieldLabel")
+        work_filter_box.addWidget(work_filter_label)
+
+        self.work_type_combo = QComboBox()
+        self.work_type_combo.setMinimumWidth(245)
+        self.work_type_combo.setCursor(Qt.PointingHandCursor)
+        work_filter_box.addWidget(self.work_type_combo)
+        date_filter_layout.addLayout(work_filter_box, 1)
+
         show_button = button("Natijani ko‘rsatish", "primary", self.load)
-        filter_layout.addWidget(show_button, 0, Qt.AlignBottom)
+        date_filter_layout.addWidget(show_button, 0, Qt.AlignBottom)
+        filter_root.addLayout(date_filter_layout)
         root.addWidget(filters)
 
         self.date_from.dateChanged.connect(self.sync_date_from)
         self.date_to.dateChanged.connect(self.sync_date_to)
+        self.work_type_combo.currentIndexChanged.connect(self.select_work_type)
 
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
@@ -954,7 +1052,7 @@ class StatisticsPage(QWidget):
             _,
         ) = self.create_chart_card(
             "Xodimlar natijasi",
-            "Ustunga bosing — xodimning kunlik statistikasi pastda ochiladi",
+            "Ustunga bosing — xodimning kunlik tafsilotlari pastda ochiladi",
             "Bu davrda bajarilgan ishlar yo‘q",
             "Boshqa sana oralig‘ini tanlang yoki kunlik hisobga ma’lumot kiriting.",
         )
@@ -968,8 +1066,8 @@ class StatisticsPage(QWidget):
             self.daily_empty,
             self.selection_chip,
         ) = self.create_chart_card(
-            "Kunma-kun ishlar tarkibi",
-            "Ranglar — ish turlari, ustun balandligi — kunlik jami",
+            "Kunma-kun natijalar",
+            "Nuqta ustiga olib boring — kunlik jami va ishlar tafsiloti ko‘rinadi",
             "Xodim tanlanmagan",
             "Yuqoridagi chartdan xodim ustunini tanlang.",
             with_selection=True,
@@ -1016,12 +1114,12 @@ class StatisticsPage(QWidget):
         card_layout.addWidget(header)
 
         stack = QStackedWidget()
-        stack.setMinimumHeight(185)
+        stack.setMinimumHeight(160)
         chart_view = QChartView()
         chart_view.setRenderHint(QPainter.Antialiasing)
         chart_view.setMouseTracking(True)
         chart_view.setStyleSheet("background: transparent; border: 0;")
-        chart_view.setMinimumHeight(185)
+        chart_view.setMinimumHeight(160)
         chart_page = chart_view
         if scrollable:
             chart_page = QScrollArea()
@@ -1048,15 +1146,71 @@ class StatisticsPage(QWidget):
     def load(self):
         date_from = self.date_from.date().toString("yyyy-MM-dd")
         date_to = self.date_to.date().toString("yyyy-MM-dd")
-        rows = self.db.employee_totals(date_from, date_to)
-        self.employee_rows = [
+        work_type_rows = self.db.statistics_work_types(date_from, date_to)
+        self.work_types = [
             {
                 "id": row["id"],
-                "name": f'{row["first_name"]} {row["last_name"]}',
+                "name": row["name"],
                 "total": int(row["total"]),
             }
-            for row in rows
+            for row in work_type_rows
         ]
+        valid_work_type_ids = {work_type["id"] for work_type in self.work_types}
+        if self.selected_work_type_id not in valid_work_type_ids:
+            self.selected_work_type_id = None
+
+        self.period_employee_work = [
+            {
+                "employee_id": row["employee_id"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "work_type_id": row["work_type_id"],
+                "total": int(row["total"]),
+            }
+            for row in self.db.employee_work_type_totals(date_from, date_to)
+        ]
+        self.rebuild_work_type_combo()
+        self.apply_work_type_filter()
+
+    def rebuild_work_type_combo(self):
+        self.work_type_combo.blockSignals(True)
+        self.work_type_combo.clear()
+        self.work_type_combo.addItem("Barchasi — barcha ishlar", None)
+        for work_type in self.work_types:
+            self.work_type_combo.addItem(
+                f'{work_type["name"]} — {work_type["total"]} ta', work_type["id"]
+            )
+        selected_index = self.work_type_combo.findData(self.selected_work_type_id)
+        self.work_type_combo.setCurrentIndex(max(0, selected_index))
+        self.work_type_combo.blockSignals(False)
+
+    def select_work_type(self, _index):
+        self.selected_work_type_id = self.work_type_combo.currentData()
+        self.apply_work_type_filter()
+
+    def apply_work_type_filter(self):
+        employees = {}
+        for row in self.period_employee_work:
+            if (
+                self.selected_work_type_id is not None
+                and row["work_type_id"] != self.selected_work_type_id
+            ):
+                continue
+            employee = employees.setdefault(
+                row["employee_id"],
+                {
+                    "id": row["employee_id"],
+                    "name": f'{row["first_name"]} {row["last_name"]}',
+                    "total": 0,
+                    "work_values": {},
+                },
+            )
+            employee["work_values"][row["work_type_id"]] = row["total"]
+            employee["total"] += row["total"]
+
+        self.employee_rows = sorted(
+            employees.values(), key=lambda employee: (-employee["total"], employee["name"])
+        )
 
         self.total_metric.set_value(sum(row["total"] for row in self.employee_rows))
         self.employee_metric.set_value(len(self.employee_rows))
@@ -1119,12 +1273,12 @@ class StatisticsPage(QWidget):
         bar_set.append(values)
         bar_set.setColor(QColor("#2f6fed"))
         bar_set.setBorderColor(QColor("#255dcc"))
-        bar_set.setSelectedColor(QColor("#7c3aed"))
-        bar_set.setLabelColor(QColor("#475467"))
+        bar_set.setSelectedColor(QColor("#2f6fed"))
+        bar_set.setLabelColor(QColor("#344054"))
         bar_set.setLabelFont(QFont("Segoe UI", 8, QFont.DemiBold))
         bar_set.clicked.connect(self.employee_clicked)
         bar_set.hovered.connect(self.employee_hovered)
-        self.employee_bar_set = bar_set
+        self.employee_bar_sets = [bar_set]
 
         series = QHorizontalBarSeries()
         series.append(bar_set)
@@ -1143,7 +1297,9 @@ class StatisticsPage(QWidget):
         name_axis.setLinePen(QPen(QColor("#d0d5dd"), 1))
 
         value_axis = QValueAxis()
-        value_axis.setRange(0, self.axis_top(max(values)))
+        value_axis.setRange(
+            0, self.axis_top(max(row["total"] for row in self.chart_employee_rows))
+        )
         self.style_value_axis(value_axis)
 
         chart.addAxis(name_axis, Qt.AlignLeft)
@@ -1158,21 +1314,25 @@ class StatisticsPage(QWidget):
             for index, row in enumerate(self.chart_employee_rows)
             if row["id"] == self.selected_employee_id
         )
-        bar_set.selectBar(selected_index)
+        for bar_set in self.employee_bar_sets:
+            bar_set.selectBar(selected_index)
 
     def employee_clicked(self, index):
         if not 0 <= index < len(self.chart_employee_rows):
             return
         self.selected_employee_id = self.chart_employee_rows[index]["id"]
-        self.employee_bar_set.deselectAllBars()
-        self.employee_bar_set.selectBar(index)
+        for bar_set in self.employee_bar_sets:
+            bar_set.deselectAllBars()
+            bar_set.selectBar(index)
         self.render_daily_chart()
 
     def employee_hovered(self, status, index):
         if status and 0 <= index < len(self.chart_employee_rows):
             row = self.chart_employee_rows[index]
             QToolTip.showText(
-                QCursor.pos(), f'{row["name"]}\nJami bajarilgan ish: {row["total"]}', self
+                QCursor.pos(),
+                f'{row["name"]}\n{self.current_work_type_name()}: {row["total"]} ta',
+                self,
             )
         else:
             QToolTip.hideText()
@@ -1180,6 +1340,15 @@ class StatisticsPage(QWidget):
     def selected_employee(self):
         return next(
             row for row in self.employee_rows if row["id"] == self.selected_employee_id
+        )
+
+    def current_work_type_name(self):
+        if self.selected_work_type_id is None:
+            return "Barcha ishlar"
+        return next(
+            work_type["name"]
+            for work_type in self.work_types
+            if work_type["id"] == self.selected_work_type_id
         )
 
     def render_daily_chart(self):
@@ -1195,71 +1364,67 @@ class StatisticsPage(QWidget):
         self.daily_days = [selected_date.addDays(offset) for offset in range(number_of_days)]
         day_keys = [day.toString("yyyy-MM-dd") for day in self.daily_days]
 
-        grouped = {}
+        all_totals_by_date = {}
+        work_type_totals_by_date = {}
         for row in records:
-            work_type = grouped.setdefault(
-                row["work_type_id"],
-                {
-                    "id": row["work_type_id"],
-                    "name": row["work_type_name"],
-                    "by_date": {},
-                    "total": 0,
-                },
-            )
             quantity = int(row["total"])
-            work_type["by_date"][row["work_date"]] = quantity
-            work_type["total"] += quantity
+            all_totals_by_date[row["work_date"]] = (
+                all_totals_by_date.get(row["work_date"], 0) + quantity
+            )
+            type_totals = work_type_totals_by_date.setdefault(row["work_type_id"], {})
+            type_totals[row["work_date"]] = type_totals.get(row["work_date"], 0) + quantity
 
-        work_types = sorted(grouped.values(), key=lambda item: (-item["total"], item["name"]))
-        self.daily_work_types = {item["id"]: item for item in work_types}
-        self.daily_day_totals = [0] * number_of_days
+        self.daily_all_totals = [
+            int(all_totals_by_date.get(day_key, 0)) for day_key in day_keys
+        ]
+        self.daily_work_type_totals = {
+            work_type["id"]: [
+                int(work_type_totals_by_date.get(work_type["id"], {}).get(day_key, 0))
+                for day_key in day_keys
+            ]
+            for work_type in self.work_types
+        }
+        self.daily_day_totals = (
+            self.daily_all_totals
+            if self.selected_work_type_id is None
+            else self.daily_work_type_totals[self.selected_work_type_id]
+        )
         self.daily_number_of_days = number_of_days
-        self.daily_work_type_count = len(work_types)
 
         chart = self.new_chart()
-        series = QStackedBarSeries()
-        series.setBarWidth(0.72)
-        colors = (
-            "#2f6fed",
-            "#7c3aed",
-            "#12b76a",
-            "#f79009",
-            "#e04f5f",
-            "#06aed4",
-            "#475467",
-            "#d946ef",
-            "#84cc16",
-            "#8b5cf6",
-        )
-
-        for color_index, work_type in enumerate(work_types):
-            values = [int(work_type["by_date"].get(day_key, 0)) for day_key in day_keys]
-            for index, value in enumerate(values):
-                self.daily_day_totals[index] += value
-            color = QColor(colors[color_index % len(colors)])
-            bar_set = QBarSet(work_type["name"])
-            bar_set.append(values)
-            bar_set.setColor(color)
-            bar_set.setBorderColor(color.darker(112))
-            bar_set.hovered.connect(
-                lambda status, index, work_type_id=work_type["id"]: self.daily_bar_hovered(
-                    status, index, work_type_id
-                )
-            )
-            series.append(bar_set)
-
+        series = QLineSeries()
+        series.setName(self.current_work_type_name())
+        series.setPen(QPen(QColor("#2f6fed"), 3))
+        series.setColor(QColor("#2f6fed"))
+        series.setPointsVisible(True)
+        series.setPointLabelsColor(QColor("#344054"))
+        series.setPointLabelsFont(QFont("Segoe UI", 8, QFont.DemiBold))
+        series.setPointLabelsFormat("@yPoint")
+        series.setPointLabelsVisible(number_of_days <= 14)
+        date_times = []
+        for day, value in zip(self.daily_days, self.daily_day_totals):
+            moment = QDateTime(day, QTime(12, 0))
+            date_times.append(moment)
+            series.append(moment.toMSecsSinceEpoch(), value)
+        series.hovered.connect(self.daily_point_hovered)
         chart.addSeries(series)
 
-        date_axis = QBarCategoryAxis()
-        if number_of_days <= 62:
-            categories = [
-                f"{day.day():02d} {UZ_MONTHS[day.month() - 1][:3]}" for day in self.daily_days
-            ]
+        date_axis = QDateTimeAxis()
+        if number_of_days == 1:
+            date_axis.setRange(
+                date_times[0].addSecs(-12 * 60 * 60),
+                date_times[0].addSecs(12 * 60 * 60),
+            )
         else:
-            categories = [day.toString("dd.MM.yy") for day in self.daily_days]
-        date_axis.append(categories)
-        date_axis.setTruncateLabels(False)
-        date_axis.setLabelsAngle(0 if number_of_days <= 10 else -45)
+            date_axis.setRange(date_times[0], date_times[-1])
+        date_axis.setFormat(
+            "dd MMM"
+            if number_of_days <= 31
+            else "dd.MM"
+            if number_of_days <= 120
+            else "MMM yy"
+        )
+        date_axis.setTickCount(min(7, max(2, number_of_days)))
         date_axis.setLabelsColor(QColor("#667085"))
         date_axis.setLabelsFont(QFont("Segoe UI", 8))
         date_axis.setGridLineVisible(False)
@@ -1273,10 +1438,6 @@ class StatisticsPage(QWidget):
         chart.addAxis(value_axis, Qt.AlignLeft)
         series.attachAxis(date_axis)
         series.attachAxis(value_axis)
-        chart.legend().setVisible(True)
-        chart.legend().setAlignment(Qt.AlignTop)
-        chart.legend().setLabelColor(QColor("#475467"))
-        chart.legend().setFont(QFont("Segoe UI", 8, QFont.DemiBold))
         self.replace_chart(self.daily_chart, chart)
         self.selection_chip.setText(employee["name"])
         self.daily_stack.setCurrentWidget(self.daily_chart_page)
@@ -1286,38 +1447,48 @@ class StatisticsPage(QWidget):
         if not isinstance(self.daily_chart_page, QScrollArea):
             return
         viewport_width = max(1, self.daily_chart_page.viewport().width())
-        required_width = max(
-            viewport_width,
-            130 + self.daily_number_of_days * 42,
-            150 * self.daily_work_type_count,
+        required_width = (
+            viewport_width
+            if self.daily_number_of_days <= 45
+            else max(viewport_width, 130 + self.daily_number_of_days * 22)
         )
-        required_height = max(175, self.daily_chart_page.height() - 12)
+        required_height = max(150, self.daily_chart_page.height() - 12)
         self.daily_chart.setFixedSize(required_width, required_height)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         QTimer.singleShot(0, self.update_daily_chart_size)
 
-    def daily_bar_hovered(self, status, index, work_type_id):
-        if not status or not 0 <= index < len(self.daily_days):
+    def daily_point_hovered(self, point, status):
+        if not status:
             QToolTip.hideText()
             return
-        work_type = self.daily_work_types[work_type_id]
-        day = self.daily_days[index]
-        quantity = int(work_type["by_date"].get(day.toString("yyyy-MM-dd"), 0))
-        if quantity <= 0:
+        day = QDateTime.fromMSecsSinceEpoch(round(point.x())).date()
+        index = self.date_from.date().daysTo(day)
+        if not 0 <= index < len(self.daily_days):
             QToolTip.hideText()
             return
+        QToolTip.showText(QCursor.pos(), self.daily_tooltip_text(index), self)
+
+    def daily_tooltip_text(self, index):
         employee = self.selected_employee()
-        QToolTip.showText(
-            QCursor.pos(),
-            (
-                f'{employee["name"]}\n{day.toString("dd.MM.yyyy")}\n'
-                f'{work_type["name"]}: {quantity} ta\n'
-                f'Kunlik jami: {self.daily_day_totals[index]} ta'
-            ),
-            self,
-        )
+        day = self.daily_days[index]
+        lines = [
+            employee["name"],
+            day.toString("dd.MM.yyyy"),
+            "",
+            f"Barcha ishlar: {self.daily_all_totals[index]} ta",
+        ]
+        if self.selected_work_type_id is None:
+            for work_type in self.work_types:
+                quantity = self.daily_work_type_totals[work_type["id"]][index]
+                if quantity > 0:
+                    lines.append(f'{work_type["name"]}: {quantity} ta')
+        else:
+            lines.append(
+                f'{self.current_work_type_name()}: {self.daily_day_totals[index]} ta'
+            )
+        return "\n".join(lines)
 
 
 class MainWindow(QMainWindow):
@@ -1421,10 +1592,22 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "HRControl.Desktop.1"
+            )
+        except (AttributeError, OSError):
+            pass
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))
     app.setStyleSheet(STYLE)
+    app_icon = QIcon(str(resource_path("assets/hr-control-app-icon.png")))
+    app.setWindowIcon(app_icon)
     window = MainWindow()
+    window.setWindowIcon(app_icon)
     window.show()
     sys.exit(app.exec())

@@ -19,6 +19,15 @@ assert [
     (row["work_date"], row["work_type_id"], row["total"])
     for row in work_type_totals
 ] == [("2099-01-01", work_type_id, 3)]
+statistics_types = db.statistics_work_types("2099-01-01", "2099-01-31")
+assert [(row["id"], row["total"]) for row in statistics_types] == [
+    (work_type_id, 3)
+]
+employee_work = db.employee_work_type_totals("2099-01-01", "2099-01-31")
+assert [
+    (row["employee_id"], row["work_type_id"], row["total"])
+    for row in employee_work
+] == [(employee_id, work_type_id, 3)]
 assert db.delete_if_unused("work_types", work_type_id) is False
 assert db.connection.execute("SELECT is_active FROM work_types WHERE id=?", (work_type_id,)).fetchone()[0] == 0
 db.connection.execute("DELETE FROM daily_entries WHERE employee_id=?", (employee_id,))
