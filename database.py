@@ -25,8 +25,7 @@ class Database:
 
     def all(self, table, include_inactive=True):
         where = "" if include_inactive else " WHERE is_active=1"
-        order = "last_name,first_name" if table == "employees" else "name"
-        return self.connection.execute(f"SELECT * FROM {table}{where} ORDER BY {order}").fetchall()
+        return self.connection.execute(f"SELECT * FROM {table}{where} ORDER BY id DESC").fetchall()
 
     def add_employee(self, first, last):
         self.connection.execute("INSERT INTO employees(first_name,last_name) VALUES(?,?)", (first.strip(),last.strip())); self.connection.commit()

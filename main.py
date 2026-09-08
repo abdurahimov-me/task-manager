@@ -13,7 +13,7 @@ from PySide6.QtCharts import (
     QLineSeries,
     QValueAxis,
 )
-from PySide6.QtCore import QDate, QDateTime, QLocale, QMargins, QTime, Qt, QTimer, Signal
+from PySide6.QtCore import QDate, QDateTime, QEvent, QLocale, QMargins, QTime, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
@@ -34,7 +34,6 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
-    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -349,7 +348,7 @@ QFrame#dialogLine {
 QMessageBox {
     background: #ffffff;
 }
-QToolTip {
+QToolTip, QLabel#chartTooltip {
     background: #101828;
     color: #ffffff;
     border: 0;
@@ -414,6 +413,25 @@ class QuantityTable(QTableWidget):
     def reset_typing(self):
         self.typing_cell = None
         self.typing_buffer = ""
+
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.ShiftModifier:
+            scrollbar = self.horizontalScrollBar()
+            pixel_delta = event.pixelDelta()
+            if not pixel_delta.isNull():
+                distance = pixel_delta.y() or pixel_delta.x()
+            else:
+                angle_delta = event.angleDelta()
+                distance = round(
+                    (angle_delta.y() or angle_delta.x())
+                    / 120
+                    * QApplication.wheelScrollLines()
+                    * scrollbar.singleStep()
+                )
+            scrollbar.setValue(scrollbar.value() - distance)
+            event.accept()
+            return
+        super().wheelEvent(event)
 
     def keyPressEvent(self, event):
         row, column = self.currentRow(), self.currentColumn()
@@ -667,9 +685,13 @@ class CrudPage(QWidget):
             row for row in rows if query in " ".join(str(value) for value in row).casefold()
         ]
 
-        headers = ["XODIM", "HOLATI"] if self.kind == "employees" else ["ISH TURI", "HOLATI"]
+        headers = (
+            ["XODIM", "QO‘SHILGAN SANA", "HOLATI"]
+            if self.kind == "employees"
+            else ["ISH TURI", "HOLATI"]
+        )
         self.table.clear()
-        self.table.setColumnCount(2)
+        self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(len(self.rows))
 
@@ -679,13 +701,17 @@ class CrudPage(QWidget):
                 if self.kind == "employees"
                 else row["name"]
             )
-            values = [name, "Faol" if row["is_active"] else "Arxivda"]
+            values = [name]
+            if self.kind == "employees":
+                created_date = QDate.fromString(row["created_at"][:10], Qt.ISODate)
+                values.append(created_date.toString("dd.MM.yyyy"))
+            values.append("Faol" if row["is_active"] else "Arxivda")
             for column, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.UserRole, row["id"])
                 if column == 0:
                     item.setForeground(QColor("#1d2939"))
-                else:
+                elif column == len(values) - 1:
                     item.setForeground(QColor("#067647" if row["is_active"] else "#98a2b3"))
                     font = item.font()
                     font.setWeight(QFont.DemiBold)
@@ -693,7 +719,8 @@ class CrudPage(QWidget):
                 self.table.setItem(row_index, column, item)
 
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        for column in range(1, len(headers)):
+            self.table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeToContents)
         self.count_label.setText(f"{len(self.rows)} ta")
         self.table.setVisible(bool(self.rows))
         self.empty_state.setVisible(not self.rows)
@@ -843,6 +870,10 @@ class DailyPage(QWidget):
 
         self.table = QuantityTable()
         configure_table(self.table)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table.horizontalHeader().setMinimumSectionSize(160)
+        self.table.horizontalHeader().setStretchLastSection(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.itemChanged.connect(self.save)
@@ -886,9 +917,9 @@ class DailyPage(QWidget):
                 item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row_index, column, item)
 
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for column in range(1, self.table.columnCount()):
-            self.table.horizontalHeader().setSectionResizeMode(column, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table.resizeColumnsToContents()
+        self.table.setColumnWidth(0, max(220, self.table.columnWidth(0)))
 
         self.employee_metric.set_value(len(self.employees))
         self.type_metric.set_value(len(self.types))
@@ -961,6 +992,11 @@ class StatisticsPage(QWidget):
         self.daily_all_totals = []
         self.daily_work_type_totals = {}
         self.daily_number_of_days = 0
+        self.chart_tooltip = QLabel(self, Qt.ToolTip | Qt.WindowTransparentForInput)
+        self.chart_tooltip.setObjectName("chartTooltip")
+        self.chart_tooltip.setTextFormat(Qt.PlainText)
+        self.chart_tooltip.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.chart_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(34, 27, 34, 26)
@@ -1074,6 +1110,8 @@ class StatisticsPage(QWidget):
             scrollable=True,
         )
         root.addWidget(daily_card, 1)
+        for view in (self.employee_chart, self.daily_chart):
+            view.viewport().installEventFilter(self)
         self.load()
 
     @staticmethod
@@ -1189,6 +1227,7 @@ class StatisticsPage(QWidget):
         self.apply_work_type_filter()
 
     def apply_work_type_filter(self):
+        self.chart_tooltip.hide()
         employees = {}
         for row in self.period_employee_work:
             if (
@@ -1329,13 +1368,42 @@ class StatisticsPage(QWidget):
     def employee_hovered(self, status, index):
         if status and 0 <= index < len(self.chart_employee_rows):
             row = self.chart_employee_rows[index]
-            QToolTip.showText(
-                QCursor.pos(),
-                f'{row["name"]}\n{self.current_work_type_name()}: {row["total"]} ta',
-                self,
-            )
+            lines = [
+                row["name"],
+                f'{self.current_work_type_name()}: {row["total"]} ta',
+            ]
+            if self.selected_work_type_id is None:
+                for work_type in self.work_types:
+                    quantity = row["work_values"].get(work_type["id"], 0)
+                    if quantity > 0:
+                        lines.append(f'{work_type["name"]}: {quantity} ta')
+            self.show_chart_tooltip("\n".join(lines))
         else:
-            QToolTip.hideText()
+            self.chart_tooltip.hide()
+
+    def show_chart_tooltip(self, text):
+        self.chart_tooltip.setText(text)
+        self.chart_tooltip.adjustSize()
+        cursor = QCursor.pos()
+        screen = QApplication.screenAt(cursor) or self.screen()
+        bounds = screen.availableGeometry()
+        x = cursor.x() + 16
+        y = cursor.y() + 20
+        if x + self.chart_tooltip.width() > bounds.right() + 1:
+            x = cursor.x() - self.chart_tooltip.width() - 16
+        if y + self.chart_tooltip.height() > bounds.bottom() + 1:
+            y = cursor.y() - self.chart_tooltip.height() - 20
+        self.chart_tooltip.move(max(bounds.left(), x), max(bounds.top(), y))
+        self.chart_tooltip.show()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Leave:
+            self.chart_tooltip.hide()
+        return super().eventFilter(watched, event)
+
+    def hideEvent(self, event):
+        self.chart_tooltip.hide()
+        super().hideEvent(event)
 
     def selected_employee(self):
         return next(
@@ -1461,14 +1529,14 @@ class StatisticsPage(QWidget):
 
     def daily_point_hovered(self, point, status):
         if not status:
-            QToolTip.hideText()
+            self.chart_tooltip.hide()
             return
         day = QDateTime.fromMSecsSinceEpoch(round(point.x())).date()
         index = self.date_from.date().daysTo(day)
         if not 0 <= index < len(self.daily_days):
-            QToolTip.hideText()
+            self.chart_tooltip.hide()
             return
-        QToolTip.showText(QCursor.pos(), self.daily_tooltip_text(index), self)
+        self.show_chart_tooltip(self.daily_tooltip_text(index))
 
     def daily_tooltip_text(self, index):
         employee = self.selected_employee()
