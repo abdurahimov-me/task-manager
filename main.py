@@ -786,6 +786,7 @@ class CrudPage(QWidget):
             for column, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.UserRole, row["id"])
+                item.setTextAlignment(Qt.AlignCenter)
                 if column == 0:
                     item.setForeground(QColor("#1d2939"))
                 elif column == len(values) - 1:
@@ -1100,6 +1101,8 @@ class StatisticsPage(QWidget):
         today = QDate.currentDate()
         self.date_from = CalendarDateEdit(today.addDays(-29))
         self.date_to = CalendarDateEdit(today)
+        self.date_from.dateChanged.connect(self.date_filter_changed)
+        self.date_to.dateChanged.connect(self.date_filter_changed)
 
         from_box = QVBoxLayout()
         from_box.setSpacing(4)
@@ -1243,6 +1246,10 @@ class StatisticsPage(QWidget):
         stack.addWidget(empty)
         card_layout.addWidget(stack, 1)
         return card, stack, chart_page, chart_view, empty, selection
+
+    def date_filter_changed(self, *_):
+        if self.date_from.date() <= self.date_to.date():
+            self.load()
 
     def load(self):
         if self.date_from.date() > self.date_to.date():
