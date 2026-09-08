@@ -17,7 +17,9 @@ from PySide6.QtCore import QDate, QDateTime, QEvent, QLocale, QMargins, QTime, Q
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractSpinBox,
     QAbstractItemView,
+    QCalendarWidget,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -185,6 +187,19 @@ QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
 QDateEdit::drop-down {
     width: 24px;
     border: 0;
+}
+QPushButton#datePickerButton {
+    background: transparent;
+    color: #667085;
+    border: 0;
+    border-left: 1px solid #eaecf0;
+    border-radius: 0;
+    padding: 0;
+    font-size: 14px;
+}
+QPushButton#datePickerButton:hover {
+    background: #f2f4f7;
+    color: #2f6fed;
 }
 QComboBox::drop-down {
     width: 28px;
@@ -477,6 +492,68 @@ class QuantityTable(QTableWidget):
     def focusOutEvent(self, event):
         self.reset_typing()
         super().focusOutEvent(event)
+
+
+class CalendarDateEdit(QDateEdit):
+    """Date field with stable manual editing and an optional calendar popup."""
+
+    def __init__(self, selected_date):
+        super().__init__(selected_date)
+        self.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.setDisplayFormat("dd.MM.yyyy")
+        self.setKeyboardTracking(False)
+        self.setMinimumWidth(145)
+        self.setToolTip("Sanani yozing yoki o‘ngdagi tugmadan kalendarni oching")
+        self.lineEdit().setReadOnly(False)
+        self.lineEdit().setCursor(Qt.IBeamCursor)
+        self.lineEdit().setTextMargins(0, 0, 30, 0)
+
+        self.calendar_button = QPushButton("▾", self)
+        self.calendar_button.setObjectName("datePickerButton")
+        self.calendar_button.setCursor(Qt.PointingHandCursor)
+        self.calendar_button.setToolTip("Kalendarni ochish")
+        self.calendar_button.clicked.connect(self.show_calendar)
+
+        self.popup_calendar = QCalendarWidget()
+        self.popup_calendar.setWindowFlags(Qt.Popup)
+        self.popup_calendar.setGridVisible(False)
+        self.popup_calendar.clicked.connect(self.choose_date)
+        self.dateChanged.connect(self.popup_calendar.setSelectedDate)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.calendar_button.setGeometry(self.width() - 35, 1, 34, self.height() - 2)
+
+    def show_calendar(self):
+        self.popup_calendar.setSelectedDate(self.date())
+        self.popup_calendar.adjustSize()
+        position = self.mapToGlobal(self.rect().bottomLeft())
+        screen = QApplication.screenAt(position) or self.screen()
+        bounds = screen.availableGeometry()
+        x = min(position.x(), bounds.right() - self.popup_calendar.width() + 1)
+        y = position.y() + 4
+        if y + self.popup_calendar.height() > bounds.bottom() + 1:
+            y = self.mapToGlobal(self.rect().topLeft()).y() - self.popup_calendar.height() - 4
+        self.popup_calendar.move(max(bounds.left(), x), max(bounds.top(), y))
+        self.popup_calendar.show()
+        self.popup_calendar.raise_()
+
+    def choose_date(self, selected_date):
+        self.setDate(selected_date)
+        self.popup_calendar.hide()
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Space, Qt.Key_Down) and event.modifiers() & Qt.AltModifier:
+            self.show_calendar()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 class MetricCard(QFrame):
@@ -872,7 +949,7 @@ class DailyPage(QWidget):
         configure_table(self.table)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.table.horizontalHeader().setMinimumSectionSize(160)
+        self.table.horizontalHeader().setMinimumSectionSize(120)
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -1021,12 +1098,8 @@ class StatisticsPage(QWidget):
         date_filter_layout.setSpacing(12)
 
         today = QDate.currentDate()
-        self.date_from = QDateEdit(today.addDays(-29))
-        self.date_to = QDateEdit(today)
-        for control in (self.date_from, self.date_to):
-            control.setCalendarPopup(True)
-            control.setDisplayFormat("dd.MM.yyyy")
-            control.setMinimumWidth(132)
+        self.date_from = CalendarDateEdit(today.addDays(-29))
+        self.date_to = CalendarDateEdit(today)
 
         from_box = QVBoxLayout()
         from_box.setSpacing(4)
@@ -1065,8 +1138,6 @@ class StatisticsPage(QWidget):
         filter_root.addLayout(date_filter_layout)
         root.addWidget(filters)
 
-        self.date_from.dateChanged.connect(self.sync_date_from)
-        self.date_to.dateChanged.connect(self.sync_date_to)
         self.work_type_combo.currentIndexChanged.connect(self.select_work_type)
 
         metrics = QHBoxLayout()
@@ -1173,15 +1244,14 @@ class StatisticsPage(QWidget):
         card_layout.addWidget(stack, 1)
         return card, stack, chart_page, chart_view, empty, selection
 
-    def sync_date_from(self, selected_date):
-        if selected_date > self.date_to.date():
-            self.date_to.setDate(selected_date)
-
-    def sync_date_to(self, selected_date):
-        if selected_date < self.date_from.date():
-            self.date_from.setDate(selected_date)
-
     def load(self):
+        if self.date_from.date() > self.date_to.date():
+            QMessageBox.information(
+                self,
+                "Sana oralig‘ini tekshiring",
+                "Boshlanish sanasi tugash sanasidan keyin bo‘lishi mumkin emas.",
+            )
+            return
         date_from = self.date_from.date().toString("yyyy-MM-dd")
         date_to = self.date_to.date().toString("yyyy-MM-dd")
         work_type_rows = self.db.statistics_work_types(date_from, date_to)
