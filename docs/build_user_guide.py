@@ -26,7 +26,7 @@ from main import EntityDialog, MainWindow, STYLE
 OUTPUT = ROOT / "docs" / "user-guide"
 SHOTS = OUTPUT / "screenshots"
 SHOTS.mkdir(parents=True, exist_ok=True)
-PDF = ROOT / "dist" / "HR-Control-Qollanma.pdf"
+PDF = ROOT / "dist" / "instruction.pdf"
 PDF.parent.mkdir(exist_ok=True)
 
 app = QApplication([])
