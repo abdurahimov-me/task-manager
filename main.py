@@ -1,6 +1,7 @@
 import sqlite3
 import sys
 from pathlib import Path
+from textwrap import wrap
 
 from PySide6.QtCharts import (
     QAbstractBarSeries,
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStackedWidget,
+    QTabBar,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -94,6 +96,24 @@ QPushButton#nav[active="true"] {
     background: #243b64;
     color: #ffffff;
     font-weight: 650;
+}
+QPushButton#nav[collapsed="true"] {
+    text-align: center;
+    padding: 10px 0;
+    font-size: 19px;
+}
+QPushButton#sidebarToggle {
+    background: #1d2939;
+    color: #98a2b3;
+    border: 0;
+    border-radius: 8px;
+    padding: 0;
+    font-size: 20px;
+    font-weight: 700;
+}
+QPushButton#sidebarToggle:hover {
+    background: #243b64;
+    color: #ffffff;
 }
 QFrame#sidebarLine {
     background: #1d2939;
@@ -302,6 +322,22 @@ QTableWidget::item:selected {
     background: #eef4ff;
     color: #1d2939;
 }
+QTableWidget#frozenEmployees {
+    background: #f8fafc;
+    alternate-background-color: #f4f7fb;
+    border: 0;
+    border-right: 2px solid #98a2b3;
+}
+QTableWidget#frozenEmployees::item {
+    background: #f8fafc;
+    color: #1d2939;
+    font-weight: 600;
+}
+QTableWidget#frozenEmployees QHeaderView::section {
+    background: #eef4ff;
+    color: #2459c4;
+    border-right: 2px solid #98a2b3;
+}
 QHeaderView {
     background: #f9fafb;
 }
@@ -313,6 +349,27 @@ QHeaderView::section {
     padding: 11px 12px;
     font-size: 11px;
     font-weight: 700;
+}
+QTabBar#departmentTabs {
+    background: #ffffff;
+    border-bottom: 1px solid #eaecf0;
+}
+QTabBar#departmentTabs::tab {
+    background: #ffffff;
+    color: #667085;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: 11px 18px;
+    min-width: 90px;
+    font-weight: 600;
+}
+QTabBar#departmentTabs::tab:hover {
+    color: #2f6fed;
+    background: #f9fafb;
+}
+QTabBar#departmentTabs::tab:selected {
+    color: #2f6fed;
+    border-bottom-color: #2f6fed;
 }
 QScrollBar:vertical {
     background: transparent;
@@ -453,7 +510,7 @@ class QuantityTable(QTableWidget):
 
     def keyPressEvent(self, event):
         row, column = self.currentRow(), self.currentColumn()
-        if row >= 0 and column > 0:
+        if row >= 0 and column >= 0:
             cell = (row, column)
             text = event.text()
 
@@ -605,10 +662,16 @@ class EmptyState(QWidget):
 
 
 class EntityDialog(QDialog):
-    def __init__(self, kind, row=None, parent=None):
+    def __init__(self, kind, row=None, parent=None, db=None):
         super().__init__(parent)
         self.kind = kind
-        noun = "Xodim" if kind == "employees" else "Ish turi"
+        self.db = db
+        nouns = {
+            "employees": "Xodim",
+            "work_types": "Ish turi",
+            "departments": "Bo‘lim",
+        }
+        noun = nouns[kind]
         action = "Tahrirlash" if row else "Yangi qo‘shish"
         self.setWindowTitle(f"{noun} — {action}")
         self.setModal(True)
@@ -628,8 +691,32 @@ class EntityDialog(QDialog):
         if kind == "employees":
             self.first = self.add_field(root, "Ism *", row["first_name"] if row else "")
             self.last = self.add_field(root, "Familiya *", row["last_name"] if row else "")
+            department_label = QLabel("Bo‘lim *")
+            department_label.setObjectName("fieldLabel")
+            self.department = QComboBox()
+            self.department.addItem("Bo‘limni tanlang", None)
+            departments = list(db.all("departments", False)) if db else []
+            current_department_id = row["department_id"] if row else None
+            if current_department_id and not any(
+                department["id"] == current_department_id for department in departments
+            ):
+                departments.extend(
+                    department
+                    for department in db.all("departments", True)
+                    if department["id"] == current_department_id
+                )
+            for department in departments:
+                suffix = " (arxivda)" if not department["is_active"] else ""
+                self.department.addItem(
+                    f'{department["name"]}{suffix}', department["id"]
+                )
+            selected_index = self.department.findData(current_department_id)
+            self.department.setCurrentIndex(max(0, selected_index))
+            root.addWidget(department_label)
+            root.addWidget(self.department)
         else:
-            self.name = self.add_field(root, "Ish turi nomi *", row["name"] if row else "")
+            field_label = "Ish turi nomi *" if kind == "work_types" else "Bo‘lim nomi *"
+            self.name = self.add_field(root, field_label, row["name"] if row else "")
 
         line = QFrame()
         line.setObjectName("dialogLine")
@@ -654,7 +741,11 @@ class EntityDialog(QDialog):
 
     def validate(self):
         if self.kind == "employees":
-            valid = self.first.text().strip() and self.last.text().strip()
+            valid = (
+                self.first.text().strip()
+                and self.last.text().strip()
+                and self.department.currentData() is not None
+            )
         else:
             valid = self.name.text().strip()
         if valid:
@@ -664,12 +755,17 @@ class EntityDialog(QDialog):
 
     def values(self):
         if self.kind == "employees":
-            return self.first.text().strip(), self.last.text().strip()
+            return (
+                self.first.text().strip(),
+                self.last.text().strip(),
+                self.department.currentData(),
+            )
         return (self.name.text().strip(),)
 
 
 class CrudPage(QWidget):
     changed = Signal()
+    INDEX_COLUMN_WIDTH = 56
 
     def __init__(self, db, kind):
         super().__init__()
@@ -686,19 +782,30 @@ class CrudPage(QWidget):
         header.setSpacing(16)
         headings = QVBoxLayout()
         headings.setSpacing(4)
-        title = QLabel("Xodimlar" if kind == "employees" else "Ish turlari")
+        titles = {
+            "employees": "Xodimlar",
+            "work_types": "Ish turlari",
+            "departments": "Bo‘limlar",
+        }
+        title = QLabel(titles[kind])
         title.setObjectName("title")
-        subtitle = QLabel(
-            "Jamoa a’zolari va ularning holatini boshqaring"
-            if kind == "employees"
-            else "Kunlik hisobda ishlatiladigan ish turlarini boshqaring"
-        )
+        subtitles = {
+            "employees": "Jamoa a’zolari, ularning bo‘limi va holatini boshqaring",
+            "work_types": "Kunlik hisobda ishlatiladigan ish turlarini boshqaring",
+            "departments": "Xodimlarni ajratish uchun tashkilot bo‘limlarini boshqaring",
+        }
+        subtitle = QLabel(subtitles[kind])
         subtitle.setObjectName("subtitle")
         headings.addWidget(title)
         headings.addWidget(subtitle)
         header.addLayout(headings)
         header.addStretch()
-        add_text = "+  Xodim qo‘shish" if kind == "employees" else "+  Ish turi qo‘shish"
+        add_texts = {
+            "employees": "+  Xodim qo‘shish",
+            "work_types": "+  Ish turi qo‘shish",
+            "departments": "+  Bo‘lim qo‘shish",
+        }
+        add_text = add_texts[kind]
         header.addWidget(button(add_text, "primary", self.add))
         root.addLayout(header)
 
@@ -708,15 +815,26 @@ class CrudPage(QWidget):
         filter_layout.setContentsMargins(14, 12, 14, 12)
         filter_layout.setSpacing(14)
         self.search = QLineEdit()
-        self.search.setPlaceholderText(
-            "Xodimni qidirish..." if kind == "employees" else "Ish turini qidirish..."
-        )
+        placeholders = {
+            "employees": "Xodim yoki bo‘limni qidirish...",
+            "work_types": "Ish turini qidirish...",
+            "departments": "Bo‘limni qidirish...",
+        }
+        self.search.setPlaceholderText(placeholders[kind])
         self.search.setClearButtonEnabled(True)
         self.search.setMinimumWidth(280)
         self.search.textChanged.connect(self.load)
+        self.department_filter = None
+        if kind == "employees":
+            self.department_filter = QComboBox()
+            self.department_filter.setMinimumWidth(210)
+            self.department_filter.setCursor(Qt.PointingHandCursor)
+            self.department_filter.currentIndexChanged.connect(self.load)
         self.inactive = QCheckBox("Arxivdagilarni ko‘rsatish")
         self.inactive.toggled.connect(self.load)
         filter_layout.addWidget(self.search)
+        if self.department_filter:
+            filter_layout.addWidget(self.department_filter)
         filter_layout.addWidget(self.inactive)
         filter_layout.addStretch()
         root.addWidget(filters)
@@ -747,29 +865,65 @@ class CrudPage(QWidget):
         configure_table(self.table)
         self.table.doubleClicked.connect(self.edit)
         card_layout.addWidget(self.table)
-        empty_title = "Xodimlar hali yo‘q" if kind == "employees" else "Ish turlari hali yo‘q"
-        empty_text = (
-            "Yuqoridagi “Xodim qo‘shish” tugmasi orqali birinchi xodimni kiriting."
-            if kind == "employees"
-            else "Yuqoridagi “Ish turi qo‘shish” tugmasi orqali birinchi turni kiriting."
-        )
+        empty_titles = {
+            "employees": "Xodimlar hali yo‘q",
+            "work_types": "Ish turlari hali yo‘q",
+            "departments": "Bo‘limlar hali yo‘q",
+        }
+        empty_texts = {
+            "employees": "Yuqoridagi “Xodim qo‘shish” tugmasi orqali birinchi xodimni kiriting.",
+            "work_types": "Yuqoridagi “Ish turi qo‘shish” tugmasi orqali birinchi turni kiriting.",
+            "departments": "Yuqoridagi “Bo‘lim qo‘shish” tugmasi orqali birinchi bo‘limni kiriting.",
+        }
+        empty_title = empty_titles[kind]
+        empty_text = empty_texts[kind]
         self.empty_state = EmptyState(empty_title, empty_text)
         card_layout.addWidget(self.empty_state, 1)
         root.addWidget(card, 1)
         self.load()
 
+    def refresh_department_filter(self):
+        if not self.department_filter:
+            return
+        selected_department_id = self.department_filter.currentData()
+        departments = sorted(
+            self.db.all("departments", True),
+            key=lambda department: department["name"].casefold(),
+        )
+        self.department_filter.blockSignals(True)
+        self.department_filter.clear()
+        self.department_filter.addItem("Barcha bo‘limlar", None)
+        self.department_filter.addItem("Bo‘limsiz", 0)
+        for department in departments:
+            suffix = " (arxivda)" if not department["is_active"] else ""
+            self.department_filter.addItem(
+                f'{department["name"]}{suffix}', department["id"]
+            )
+        selected_index = self.department_filter.findData(selected_department_id)
+        self.department_filter.setCurrentIndex(max(0, selected_index))
+        self.department_filter.blockSignals(False)
+
     def load(self):
+        self.refresh_department_filter()
         rows = self.db.all(self.kind, self.inactive.isChecked())
         query = self.search.text().strip().casefold()
         self.rows = [
             row for row in rows if query in " ".join(str(value) for value in row).casefold()
         ]
+        if self.kind == "employees":
+            department_id = self.department_filter.currentData()
+            if department_id == 0:
+                self.rows = [row for row in self.rows if row["department_id"] is None]
+            elif department_id is not None:
+                self.rows = [
+                    row for row in self.rows if row["department_id"] == department_id
+                ]
 
-        headers = (
-            ["XODIM", "QO‘SHILGAN SANA", "HOLATI"]
-            if self.kind == "employees"
-            else ["ISH TURI", "HOLATI"]
-        )
+        headers = {
+            "employees": ["№", "XODIM", "BO‘LIM", "QO‘SHILGAN SANA", "HOLATI"],
+            "work_types": ["№", "ISH TURI", "HOLATI"],
+            "departments": ["№", "BO‘LIM", "HOLATI"],
+        }[self.kind]
         self.table.clear()
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
@@ -781,8 +935,9 @@ class CrudPage(QWidget):
                 if self.kind == "employees"
                 else row["name"]
             )
-            values = [name]
+            values = [row_index + 1, name]
             if self.kind == "employees":
+                values.append(row["department_name"] or "Bo‘limsiz")
                 created_date = QDate.fromString(row["created_at"][:10], Qt.ISODate)
                 values.append(created_date.toString("dd.MM.yyyy"))
             values.append("Faol" if row["is_active"] else "Arxivda")
@@ -791,6 +946,8 @@ class CrudPage(QWidget):
                 item.setData(Qt.UserRole, row["id"])
                 item.setTextAlignment(Qt.AlignCenter)
                 if column == 0:
+                    item.setForeground(QColor("#98a2b3"))
+                elif column == 1:
                     item.setForeground(QColor("#1d2939"))
                 elif column == len(values) - 1:
                     item.setForeground(QColor("#067647" if row["is_active"] else "#98a2b3"))
@@ -799,12 +956,35 @@ class CrudPage(QWidget):
                     item.setFont(font)
                 self.table.setItem(row_index, column, item)
 
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for column in range(1, len(headers)):
-            self.table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        table_header = self.table.horizontalHeader()
+        table_header.setStretchLastSection(False)
+        table_header.setSectionResizeMode(QHeaderView.Fixed)
+        self.resize_table_columns()
+        QTimer.singleShot(0, self.resize_table_columns)
         self.count_label.setText(f"{len(self.rows)} ta")
         self.table.setVisible(bool(self.rows))
         self.empty_state.setVisible(not self.rows)
+
+    def resize_table_columns(self):
+        if not self.table.columnCount():
+            return
+        self.table.setColumnWidth(0, self.INDEX_COLUMN_WIDTH)
+        available_width = max(
+            0, self.table.viewport().width() - self.INDEX_COLUMN_WIDTH
+        )
+        weights = [0.30, 0.30, 0.22, 0.18] if self.kind == "employees" else [0.75, 0.25]
+        assigned_width = 0
+        for offset, weight in enumerate(weights, 1):
+            if offset == len(weights):
+                width = max(1, available_width - assigned_width)
+            else:
+                width = max(1, round(available_width * weight))
+                assigned_width += width
+            self.table.setColumnWidth(offset, width)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self.resize_table_columns)
 
     def selected(self):
         index = self.table.currentRow()
@@ -816,11 +996,16 @@ class CrudPage(QWidget):
         return self.rows[index]
 
     def add(self):
-        dialog = EntityDialog(self.kind, parent=self)
+        dialog = EntityDialog(self.kind, parent=self, db=self.db)
         if not dialog.exec():
             return
         try:
-            action = self.db.add_employee if self.kind == "employees" else self.db.add_work_type
+            actions = {
+                "employees": self.db.add_employee,
+                "work_types": self.db.add_work_type,
+                "departments": self.db.add_department,
+            }
+            action = actions[self.kind]
             action(*dialog.values())
             self.load()
             self.changed.emit()
@@ -831,11 +1016,16 @@ class CrudPage(QWidget):
         row = self.selected()
         if not row:
             return
-        dialog = EntityDialog(self.kind, row, self)
+        dialog = EntityDialog(self.kind, row, self, self.db)
         if not dialog.exec():
             return
         try:
-            action = self.db.update_employee if self.kind == "employees" else self.db.update_work_type
+            actions = {
+                "employees": self.db.update_employee,
+                "work_types": self.db.update_work_type,
+                "departments": self.db.update_department,
+            }
+            action = actions[self.kind]
             action(row["id"], *dialog.values())
             self.load()
             self.changed.emit()
@@ -878,11 +1068,16 @@ class CrudPage(QWidget):
 
 
 class DailyPage(QWidget):
+    EMPLOYEE_COLUMN_WIDTH = 220
+    WORK_TYPE_COLUMN_WIDTH = 150
+    HEADER_HEIGHT = 78
+
     def __init__(self, db):
         super().__init__()
         self.setObjectName("page")
         self.db = db
         self.loading = False
+        self.selected_department_id = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(34, 27, 34, 30)
@@ -933,6 +1128,14 @@ class DailyPage(QWidget):
         card_layout.setContentsMargins(1, 1, 1, 1)
         card_layout.setSpacing(0)
 
+        self.department_tabs = QTabBar()
+        self.department_tabs.setObjectName("departmentTabs")
+        self.department_tabs.setExpanding(False)
+        self.department_tabs.setUsesScrollButtons(True)
+        self.department_tabs.setDocumentMode(True)
+        self.department_tabs.currentChanged.connect(self.select_department)
+        card_layout.addWidget(self.department_tabs)
+
         table_header = QWidget()
         table_header_layout = QHBoxLayout(table_header)
         table_header_layout.setContentsMargins(17, 13, 17, 13)
@@ -949,6 +1152,22 @@ class DailyPage(QWidget):
         table_header_layout.addWidget(self.save_state)
         card_layout.addWidget(table_header)
 
+        self.table_container = QWidget()
+        table_container_layout = QHBoxLayout(self.table_container)
+        table_container_layout.setContentsMargins(0, 0, 0, 0)
+        table_container_layout.setSpacing(0)
+
+        self.employee_table = QTableWidget()
+        self.employee_table.setObjectName("frozenEmployees")
+        configure_table(self.employee_table)
+        self.employee_table.setColumnCount(1)
+        self.employee_table.setHorizontalHeaderLabels(["XODIM"])
+        self.employee_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.employee_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.employee_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.employee_table.setFocusPolicy(Qt.NoFocus)
+        self.employee_table.setFixedWidth(self.EMPLOYEE_COLUMN_WIDTH)
+
         self.table = QuantityTable()
         configure_table(self.table)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -958,10 +1177,18 @@ class DailyPage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.itemChanged.connect(self.save)
-        card_layout.addWidget(self.table)
+        self.table.verticalScrollBar().valueChanged.connect(
+            self.employee_table.verticalScrollBar().setValue
+        )
+        self.employee_table.verticalScrollBar().valueChanged.connect(
+            self.table.verticalScrollBar().setValue
+        )
+        table_container_layout.addWidget(self.employee_table)
+        table_container_layout.addWidget(self.table, 1)
+        card_layout.addWidget(self.table_container)
         self.empty_state = EmptyState(
             "Jadval hali tayyor emas",
-            "Hisobni boshlash uchun kamida bitta xodim va bitta ish turi qo‘shing.",
+            "Tanlangan bo‘limda faol xodim va kamida bitta ish turi borligini tekshiring.",
         )
         card_layout.addWidget(self.empty_state, 1)
         root.addWidget(card, 1)
@@ -973,34 +1200,94 @@ class DailyPage(QWidget):
     def go_today(self):
         self.date.setDate(QDate.currentDate())
 
+    def refresh_department_tabs(self):
+        departments, has_unassigned = self.db.daily_departments()
+        tabs = [(department["id"], department["name"]) for department in departments]
+        if has_unassigned:
+            tabs.append((0, "Bo‘limsiz"))
+
+        self.department_tabs.blockSignals(True)
+        while self.department_tabs.count():
+            self.department_tabs.removeTab(0)
+        for department_id, name in tabs:
+            index = self.department_tabs.addTab(name)
+            self.department_tabs.setTabData(index, department_id)
+
+        selected_index = next(
+            (
+                index
+                for index in range(self.department_tabs.count())
+                if self.department_tabs.tabData(index) == self.selected_department_id
+            ),
+            0 if self.department_tabs.count() else -1,
+        )
+        if selected_index >= 0:
+            self.department_tabs.setCurrentIndex(selected_index)
+            self.selected_department_id = self.department_tabs.tabData(selected_index)
+        else:
+            self.selected_department_id = None
+        self.department_tabs.blockSignals(False)
+        self.department_tabs.setVisible(bool(tabs))
+
+    def select_department(self, index):
+        if index < 0:
+            return
+        self.selected_department_id = self.department_tabs.tabData(index)
+        self.load()
+
+    @staticmethod
+    def work_type_header(name):
+        lines = wrap(name.upper(), width=18, break_long_words=True)
+        if len(lines) > 3:
+            lines = lines[:3]
+            lines[-1] = f'{lines[-1][:15].rstrip()}…'
+        return "\n".join(lines)
+
     def load(self):
         self.loading = True
+        self.refresh_department_tabs()
         work_date = self.date.date().toString("yyyy-MM-dd")
-        self.employees, self.types, values = self.db.daily_matrix(work_date)
+        self.employees, self.types, values = self.db.daily_matrix(
+            work_date, self.selected_department_id
+        )
+
+        self.employee_table.clear()
+        self.employee_table.setColumnCount(1)
+        self.employee_table.setHorizontalHeaderLabels(["XODIM"])
+        self.employee_table.setRowCount(len(self.employees))
 
         self.table.clear()
         self.table.setRowCount(len(self.employees))
-        self.table.setColumnCount(len(self.types) + 1)
+        self.table.setColumnCount(len(self.types))
         self.table.setHorizontalHeaderLabels(
-            ["XODIM"] + [work_type["name"].upper() for work_type in self.types]
+            [self.work_type_header(work_type["name"]) for work_type in self.types]
         )
+        for column, work_type in enumerate(self.types):
+            self.table.horizontalHeaderItem(column).setToolTip(work_type["name"])
 
         for row_index, employee in enumerate(self.employees):
             name = QTableWidgetItem(f'{employee["last_name"]} {employee["first_name"]}')
             name.setFlags(name.flags() & ~Qt.ItemIsEditable)
             name.setForeground(QColor("#1d2939"))
             name.setBackground(QColor("#f9fafb"))
-            self.table.setItem(row_index, 0, name)
+            self.employee_table.setItem(row_index, 0, name)
 
-            for column, work_type in enumerate(self.types, 1):
+            for column, work_type in enumerate(self.types):
                 quantity = values.get((employee["id"], work_type["id"]), 0)
                 item = QTableWidgetItem(str(quantity))
                 item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row_index, column, item)
 
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.table.resizeColumnsToContents()
-        self.table.setColumnWidth(0, max(220, self.table.columnWidth(0)))
+        table_header = self.table.horizontalHeader()
+        table_header.setFixedHeight(self.HEADER_HEIGHT)
+        table_header.setDefaultAlignment(Qt.AlignCenter | Qt.TextWordWrap)
+        table_header.setSectionResizeMode(QHeaderView.Fixed)
+        for column in range(self.table.columnCount()):
+            self.table.setColumnWidth(column, self.WORK_TYPE_COLUMN_WIDTH)
+        employee_header = self.employee_table.horizontalHeader()
+        employee_header.setFixedHeight(self.HEADER_HEIGHT)
+        employee_header.setSectionResizeMode(0, QHeaderView.Fixed)
+        self.employee_table.setColumnWidth(0, self.EMPLOYEE_COLUMN_WIDTH - 1)
 
         self.employee_metric.set_value(len(self.employees))
         self.type_metric.set_value(len(self.types))
@@ -1013,12 +1300,12 @@ class DailyPage(QWidget):
         self.save_state.setText("●  Avtomatik saqlanadi")
         self.save_state.setStyleSheet("color: #98a2b3;")
         has_matrix = bool(self.employees and self.types)
-        self.table.setVisible(has_matrix)
+        self.table_container.setVisible(has_matrix)
         self.empty_state.setVisible(not has_matrix)
         self.loading = False
 
     def save(self, item):
-        if self.loading or item.column() == 0:
+        if self.loading:
             return
         try:
             value = int(item.text() or 0)
@@ -1032,7 +1319,7 @@ class DailyPage(QWidget):
 
         self.db.save_quantity(
             self.employees[item.row()]["id"],
-            self.types[item.column() - 1]["id"],
+            self.types[item.column()]["id"],
             self.date.date().toString("yyyy-MM-dd"),
             value,
         )
@@ -1044,7 +1331,7 @@ class DailyPage(QWidget):
     def update_total(self):
         total = 0
         for row in range(self.table.rowCount()):
-            for column in range(1, self.table.columnCount()):
+            for column in range(self.table.columnCount()):
                 try:
                     total += int(self.table.item(row, column).text())
                 except (AttributeError, ValueError):
@@ -1064,6 +1351,7 @@ class StatisticsPage(QWidget):
         self.employee_rows = []
         self.chart_employee_rows = []
         self.selected_employee_id = None
+        self.selected_department_id = None
         self.selected_work_type_id = None
         self.employee_bar_sets = []
         self.period_employee_work = []
@@ -1073,6 +1361,7 @@ class StatisticsPage(QWidget):
         self.daily_all_totals = []
         self.daily_work_type_totals = {}
         self.daily_number_of_days = 0
+        self.departments = []
         self.chart_tooltip = QLabel(self, Qt.ToolTip | Qt.WindowTransparentForInput)
         self.chart_tooltip.setObjectName("chartTooltip")
         self.chart_tooltip.setTextFormat(Qt.PlainText)
@@ -1126,6 +1415,23 @@ class StatisticsPage(QWidget):
         separator.setObjectName("muted")
         date_filter_layout.addWidget(separator, 0, Qt.AlignBottom)
         date_filter_layout.addLayout(to_box)
+        date_filter_layout.addStretch()
+        filter_root.addLayout(date_filter_layout)
+
+        selection_filter_layout = QHBoxLayout()
+        selection_filter_layout.setSpacing(12)
+
+        department_filter_box = QVBoxLayout()
+        department_filter_box.setSpacing(4)
+        department_filter_label = QLabel("Bo‘lim")
+        department_filter_label.setObjectName("fieldLabel")
+        department_filter_box.addWidget(department_filter_label)
+
+        self.department_combo = QComboBox()
+        self.department_combo.setMinimumWidth(190)
+        self.department_combo.setCursor(Qt.PointingHandCursor)
+        department_filter_box.addWidget(self.department_combo)
+        selection_filter_layout.addLayout(department_filter_box, 1)
 
         work_filter_box = QVBoxLayout()
         work_filter_box.setSpacing(4)
@@ -1137,14 +1443,15 @@ class StatisticsPage(QWidget):
         self.work_type_combo.setMinimumWidth(245)
         self.work_type_combo.setCursor(Qt.PointingHandCursor)
         work_filter_box.addWidget(self.work_type_combo)
-        date_filter_layout.addLayout(work_filter_box, 1)
+        selection_filter_layout.addLayout(work_filter_box, 1)
 
         show_button = button("Natijani ko‘rsatish", "primary", self.load)
-        date_filter_layout.addWidget(show_button, 0, Qt.AlignBottom)
-        filter_root.addLayout(date_filter_layout)
+        selection_filter_layout.addWidget(show_button, 0, Qt.AlignBottom)
+        filter_root.addLayout(selection_filter_layout)
         root.addWidget(filters)
 
         self.work_type_combo.currentIndexChanged.connect(self.select_work_type)
+        self.department_combo.currentIndexChanged.connect(self.select_department)
 
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
@@ -1168,6 +1475,8 @@ class StatisticsPage(QWidget):
             "Ustunga bosing — xodimning kunlik tafsilotlari pastda ochiladi",
             "Bu davrda bajarilgan ishlar yo‘q",
             "Boshqa sana oralig‘ini tanlang yoki kunlik hisobga ma’lumot kiriting.",
+            scrollable=True,
+            vertical_scrollable=True,
         )
         root.addWidget(employee_card, 1)
 
@@ -1199,6 +1508,7 @@ class StatisticsPage(QWidget):
         empty_text,
         with_selection=False,
         scrollable=False,
+        vertical_scrollable=False,
     ):
         card = QFrame()
         card.setObjectName("surface")
@@ -1240,8 +1550,12 @@ class StatisticsPage(QWidget):
             chart_page = QScrollArea()
             chart_page.setFrameShape(QFrame.NoFrame)
             chart_page.setWidgetResizable(False)
-            chart_page.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            chart_page.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            chart_page.setVerticalScrollBarPolicy(
+                Qt.ScrollBarAsNeeded if vertical_scrollable else Qt.ScrollBarAlwaysOff
+            )
+            chart_page.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarAlwaysOff if vertical_scrollable else Qt.ScrollBarAsNeeded
+            )
             chart_page.setWidget(chart_view)
             chart_page.setStyleSheet("QScrollArea { background: transparent; border: 0; }")
         empty = EmptyState(empty_title, empty_text)
@@ -1264,7 +1578,10 @@ class StatisticsPage(QWidget):
             return
         date_from = self.date_from.date().toString("yyyy-MM-dd")
         date_to = self.date_to.date().toString("yyyy-MM-dd")
-        work_type_rows = self.db.statistics_work_types(date_from, date_to)
+        self.rebuild_department_combo()
+        work_type_rows = self.db.statistics_work_types(
+            date_from, date_to, self.selected_department_id
+        )
         self.work_types = [
             {
                 "id": row["id"],
@@ -1282,13 +1599,40 @@ class StatisticsPage(QWidget):
                 "employee_id": row["employee_id"],
                 "first_name": row["first_name"],
                 "last_name": row["last_name"],
+                "department_id": row["department_id"],
                 "work_type_id": row["work_type_id"],
                 "total": int(row["total"]),
             }
-            for row in self.db.employee_work_type_totals(date_from, date_to)
+            for row in self.db.employee_work_type_totals(
+                date_from, date_to, self.selected_department_id
+            )
         ]
         self.rebuild_work_type_combo()
         self.apply_work_type_filter()
+
+    def rebuild_department_combo(self):
+        self.departments = list(self.db.all("departments", True))
+        valid_department_ids = {department["id"] for department in self.departments}
+        if self.selected_department_id not in valid_department_ids:
+            self.selected_department_id = None
+
+        self.department_combo.blockSignals(True)
+        self.department_combo.clear()
+        self.department_combo.addItem("Barcha bo‘limlar", None)
+        for department in sorted(
+            self.departments, key=lambda department: department["name"].casefold()
+        ):
+            suffix = " (arxivda)" if not department["is_active"] else ""
+            self.department_combo.addItem(
+                f'{department["name"]}{suffix}', department["id"]
+            )
+        selected_index = self.department_combo.findData(self.selected_department_id)
+        self.department_combo.setCurrentIndex(max(0, selected_index))
+        self.department_combo.blockSignals(False)
+
+    def select_department(self, _index):
+        self.selected_department_id = self.department_combo.currentData()
+        self.load()
 
     def rebuild_work_type_combo(self):
         self.work_type_combo.blockSignals(True)
@@ -1427,6 +1771,7 @@ class StatisticsPage(QWidget):
         series.attachAxis(value_axis)
         self.replace_chart(self.employee_chart, chart)
         self.employee_stack.setCurrentWidget(self.employee_chart_page)
+        QTimer.singleShot(0, self.update_employee_chart_size)
 
         selected_index = next(
             index
@@ -1435,6 +1780,17 @@ class StatisticsPage(QWidget):
         )
         for bar_set in self.employee_bar_sets:
             bar_set.selectBar(selected_index)
+
+    def update_employee_chart_size(self):
+        if not isinstance(self.employee_chart_page, QScrollArea):
+            return
+        viewport = self.employee_chart_page.viewport()
+        required_width = max(1, viewport.width())
+        required_height = max(
+            max(160, viewport.height()),
+            85 + len(self.chart_employee_rows) * 36,
+        )
+        self.employee_chart.setFixedSize(required_width, required_height)
 
     def employee_clicked(self, index):
         if not 0 <= index < len(self.chart_employee_rows):
@@ -1605,6 +1961,7 @@ class StatisticsPage(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        QTimer.singleShot(0, self.update_employee_chart_size)
         QTimer.singleShot(0, self.update_daily_chart_size)
 
     def daily_point_hovered(self, point, status):
@@ -1654,19 +2011,20 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(238)
-        nav = QVBoxLayout(sidebar)
-        nav.setContentsMargins(18, 22, 18, 18)
-        nav.setSpacing(7)
+        self.sidebar_collapsed = False
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("sidebar")
+        self.sidebar.setFixedWidth(238)
+        self.nav_layout = QVBoxLayout(self.sidebar)
+        self.nav_layout.setContentsMargins(18, 22, 18, 18)
+        self.nav_layout.setSpacing(7)
 
         identity = QHBoxLayout()
         identity.setSpacing(11)
-        logo = QFrame()
-        logo.setObjectName("logoMark")
-        logo.setFixedSize(40, 40)
-        logo_layout = QVBoxLayout(logo)
+        self.logo = QFrame()
+        self.logo.setObjectName("logoMark")
+        self.logo.setFixedSize(40, 40)
+        logo_layout = QVBoxLayout(self.logo)
         logo_layout.setContentsMargins(0, 0, 0, 0)
         logo_text = QLabel("HC")
         logo_text.setObjectName("logoText")
@@ -1675,57 +2033,100 @@ class MainWindow(QMainWindow):
 
         brand_box = QVBoxLayout()
         brand_box.setSpacing(1)
-        brand = QLabel("HR Control")
-        brand.setObjectName("brand")
-        brand_sub = QLabel("ISH NAZORATI")
-        brand_sub.setObjectName("brandSub")
-        brand_box.addWidget(brand)
-        brand_box.addWidget(brand_sub)
-        identity.addWidget(logo)
+        self.brand = QLabel("HR Control")
+        self.brand.setObjectName("brand")
+        self.brand_sub = QLabel("ISH NAZORATI")
+        self.brand_sub.setObjectName("brandSub")
+        brand_box.addWidget(self.brand)
+        brand_box.addWidget(self.brand_sub)
+        identity.addWidget(self.logo)
         identity.addLayout(brand_box)
         identity.addStretch()
-        nav.addLayout(identity)
-        nav.addSpacing(27)
+        self.sidebar_toggle = button("‹", "sidebarToggle", self.toggle_sidebar)
+        self.sidebar_toggle.setFixedSize(32, 32)
+        self.sidebar_toggle.setToolTip("Yon menyuni yopish")
+        identity.addWidget(self.sidebar_toggle, 0, Qt.AlignVCenter)
+        self.nav_layout.addLayout(identity)
+        self.nav_layout.addSpacing(27)
 
-        section = QLabel("ASOSIY MENYU")
-        section.setObjectName("navSection")
-        section.setContentsMargins(12, 0, 0, 3)
-        nav.addWidget(section)
+        self.nav_section = QLabel("ASOSIY MENYU")
+        self.nav_section.setObjectName("navSection")
+        self.nav_section.setContentsMargins(12, 0, 0, 3)
+        self.nav_layout.addWidget(self.nav_section)
 
         self.stack = QStackedWidget()
         self.daily = DailyPage(self.db)
         self.employees = CrudPage(self.db, "employees")
+        self.departments = CrudPage(self.db, "departments")
         self.types = CrudPage(self.db, "work_types")
         self.statistics = StatisticsPage(self.db)
-        for page in (self.statistics, self.daily, self.employees, self.types):
+        for page in (
+            self.statistics,
+            self.daily,
+            self.employees,
+            self.departments,
+            self.types,
+        ):
             self.stack.addWidget(page)
 
         self.buttons = []
-        labels = ("Statistika", "Kunlik hisob", "Xodimlar", "Ish turlari")
-        for index, label in enumerate(labels):
-            nav_button = button(label, "nav")
+        self.nav_items = (
+            ("▥", "Statistika"),
+            ("▦", "Kunlik hisob"),
+            ("♙", "Xodimlar"),
+            ("▣", "Bo‘limlar"),
+            ("✓", "Ish turlari"),
+        )
+        for index, (icon, label) in enumerate(self.nav_items):
+            nav_button = button(f"{icon}   {label}", "nav")
             nav_button.setMinimumHeight(44)
             nav_button.clicked.connect(
                 lambda checked=False, page_index=index: self.navigate(page_index)
             )
-            nav.addWidget(nav_button)
+            self.nav_layout.addWidget(nav_button)
             self.buttons.append(nav_button)
 
-        nav.addStretch()
-        line = QFrame()
-        line.setObjectName("sidebarLine")
-        nav.addWidget(line)
-        nav.addSpacing(8)
-        foot = QLabel("Ma’lumotlar ushbu qurilmada\nxavfsiz saqlanadi  ·  v1.0")
-        foot.setObjectName("sidebarFoot")
-        nav.addWidget(foot)
+        self.nav_layout.addStretch()
+        self.sidebar_line = QFrame()
+        self.sidebar_line.setObjectName("sidebarLine")
+        self.nav_layout.addWidget(self.sidebar_line)
+        self.nav_layout.addSpacing(8)
+        self.sidebar_foot = QLabel("Ma’lumotlar ushbu qurilmada\nxavfsiz saqlanadi  ·  v1.0")
+        self.sidebar_foot.setObjectName("sidebarFoot")
+        self.nav_layout.addWidget(self.sidebar_foot)
 
-        layout.addWidget(sidebar)
+        layout.addWidget(self.sidebar)
         layout.addWidget(self.stack, 1)
 
         self.employees.changed.connect(self.daily.load)
+        self.departments.changed.connect(self.employees.load)
+        self.departments.changed.connect(self.daily.load)
         self.types.changed.connect(self.daily.load)
         self.navigate(0)
+
+    def toggle_sidebar(self):
+        self.sidebar_collapsed = not self.sidebar_collapsed
+        self.sidebar.setFixedWidth(76 if self.sidebar_collapsed else 238)
+        margins = (10, 22, 10, 18) if self.sidebar_collapsed else (18, 22, 18, 18)
+        self.nav_layout.setContentsMargins(*margins)
+        for widget in (
+            self.logo,
+            self.brand,
+            self.brand_sub,
+            self.nav_section,
+            self.sidebar_foot,
+        ):
+            widget.setVisible(not self.sidebar_collapsed)
+        self.sidebar_toggle.setText("›" if self.sidebar_collapsed else "‹")
+        self.sidebar_toggle.setToolTip(
+            "Yon menyuni ochish" if self.sidebar_collapsed else "Yon menyuni yopish"
+        )
+        for nav_button, (icon, label) in zip(self.buttons, self.nav_items):
+            nav_button.setText(icon if self.sidebar_collapsed else f"{icon}   {label}")
+            nav_button.setToolTip(label if self.sidebar_collapsed else "")
+            nav_button.setProperty("collapsed", self.sidebar_collapsed)
+            nav_button.style().unpolish(nav_button)
+            nav_button.style().polish(nav_button)
 
     def navigate(self, index):
         self.stack.setCurrentIndex(index)

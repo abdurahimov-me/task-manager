@@ -44,11 +44,13 @@ with patch("database.app_data_dir", return_value=OUTPUT), patch(
 ):
     window = MainWindow()
 db = window.db
-for first, last in [
+for name in ("Savdo", "Moliya", "Kadrlar"):
+    db.add_department(name)
+for index, (first, last) in enumerate([
     ("Aziz", "Karimov"), ("Malika", "Rahimova"), ("Javohir", "Aliyev"),
     ("Dilnoza", "Ismoilova"), ("Nigora", "Tursunova"), ("Sardor", "Nazarov"),
-]:
-    db.add_employee(first, last)
+]):
+    db.add_employee(first, last, index % 3 + 1)
 for row in db.all("employees"):
     db.connection.execute(
         "UPDATE employees SET created_at=? WHERE id=?",
@@ -93,7 +95,7 @@ window.navigate(0)
 capture("01-overview", window)
 window.navigate(2)
 capture("02-employees", window.employees, QRect(0, 0, window.employees.width(), 560))
-dialog = EntityDialog("employees", parent=window)
+dialog = EntityDialog("employees", parent=window, db=db)
 dialog.first.setText("Umid")
 dialog.last.setText("Sobirov")
 dialog.show()
@@ -101,7 +103,7 @@ capture("03-add-employee", dialog)
 dialog.close()
 window.navigate(3)
 capture("04-work-types", window.types, QRect(0, 0, window.types.width(), 680))
-dialog = EntityDialog("work_types", parent=window)
+dialog = EntityDialog("work_types", parent=window, db=db)
 dialog.name.setText("Buyurtma tayyorlash")
 dialog.show()
 capture("05-add-work-type", dialog)
