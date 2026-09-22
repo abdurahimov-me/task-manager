@@ -26,8 +26,12 @@ try:
     department_ids = {
         row["name"]: row["id"] for row in db.all("departments", False)
     }
-    db.add_employee("Ali", "Valiyev", department_ids["Savdo"])
-    db.add_employee("Sami", "Karimov", department_ids["Moliya"])
+    db.add_project("Yangi ofis", QDate.currentDate().addDays(-30).toString("yyyy-MM-dd"))
+    db.add_project("Angren ombori", QDate.currentDate().addDays(-20).toString("yyyy-MM-dd"))
+    project_ids = {row["name"]: row["id"] for row in db.all("projects", False)}
+    project_id = project_ids["Yangi ofis"]
+    db.add_employee("Ali", "Valiyev", department_ids["Savdo"], list(project_ids.values()))
+    db.add_employee("Sami", "Karimov", department_ids["Moliya"], [project_id])
     long_work_type = "Juda uzun nomli ish turi hisoboti"
     db.add_work_type(long_work_type)
     for index in range(7):
@@ -40,24 +44,24 @@ try:
         "SELECT id FROM work_types WHERE name=?", (long_work_type,)
     ).fetchone()[0]
     today = QDate.currentDate().toString("yyyy-MM-dd")
-    db.save_quantity(employee_id, work_type_id, today, 4)
+    db.save_quantity(employee_id, project_id, work_type_id, today, 4)
     for index in range(30):
-        db.add_employee(f"Xodim {index + 1}", "Test", department_ids["Savdo"])
+        db.add_employee(f"Xodim {index + 1}", "Test", department_ids["Savdo"], [project_id])
         extra_employee_id = db.connection.execute(
             "SELECT id FROM employees WHERE first_name=?", (f"Xodim {index + 1}",)
         ).fetchone()[0]
-        db.save_quantity(extra_employee_id, work_type_id, today, 1)
+        db.save_quantity(extra_employee_id, project_id, work_type_id, today, 1)
 
     window.employees.load()
     app.processEvents()
     assert window.employees.table.horizontalHeaderItem(0).text() == "№"
     assert window.employees.table.item(0, 0).text() == "1"
     employee_widths = [
-        window.employees.table.columnWidth(column) for column in range(5)
+        window.employees.table.columnWidth(column) for column in range(6)
     ]
     assert employee_widths[0] == 56
     assert abs(sum(employee_widths) - window.employees.table.viewport().width()) <= 2
-    assert abs(employee_widths[1] - employee_widths[2]) <= 2
+    assert window.employees.table.horizontalHeaderItem(3).text() == "LOYIHALARI"
     finance_filter = window.employees.department_filter.findData(
         department_ids["Moliya"]
     )
@@ -67,9 +71,15 @@ try:
     assert window.employees.table.item(0, 0).text() == "1"
 
     window.departments.load()
+    window.projects.load()
     window.types.load()
     app.processEvents()
     assert window.departments.table.horizontalHeaderItem(0).text() == "№"
+    assert window.projects.table.horizontalHeaderItem(1).text() == "LOYIHA"
+    assert {
+        window.projects.table.item(row, 1).text()
+        for row in range(window.projects.table.rowCount())
+    } == {"Yangi ofis", "Angren ombori"}
     assert window.types.table.horizontalHeaderItem(0).text() == "№"
     assert window.departments.table.columnWidth(0) == 56
     assert window.types.table.columnWidth(0) == 56
@@ -91,12 +101,24 @@ try:
     )
     window.daily.department_tabs.setCurrentIndex(sales_tab)
     app.processEvents()
-    assert window.daily.table.rowCount() == 31
+    assert window.daily.table.rowCount() == 32
     employee_names = [
         window.daily.employee_table.item(row, 0).text()
         for row in range(window.daily.employee_table.rowCount())
+        if window.daily.employee_table.item(row, 0) is not None
     ]
     assert "Valiyev Ali" in employee_names
+    ali_row = next(
+        row
+        for row in range(window.daily.employee_table.rowCount())
+        if window.daily.employee_table.item(row, 0) is not None
+        and window.daily.employee_table.item(row, 0).text() == "Valiyev Ali"
+    )
+    assert window.daily.employee_table.rowSpan(ali_row, 0) == 2
+    assert {
+        window.daily.employee_table.item(row, 1).text()
+        for row in (ali_row, ali_row + 1)
+    } == {"Yangi ofis", "Angren ombori"}
     assert all(
         window.daily.table.columnWidth(column)
         == window.daily.WORK_TYPE_COLUMN_WIDTH
@@ -111,12 +133,15 @@ try:
     assert "\n" in window.daily.table.horizontalHeaderItem(long_work_type_column).text()
     assert window.daily.table.horizontalScrollBar().maximum() > 0
     assert window.daily.employee_table.objectName() == "frozenEmployees"
+    assert window.daily.employee_table.horizontalHeaderItem(1).text() == "LOYIHA"
+    assert window.daily.employee_table.item(0, 1).text() == "Yangi ofis"
     window.daily.table.horizontalScrollBar().setValue(
         window.daily.table.horizontalScrollBar().maximum()
     )
     assert "Valiyev Ali" in [
         window.daily.employee_table.item(row, 0).text()
         for row in range(window.daily.employee_table.rowCount())
+        if window.daily.employee_table.item(row, 0) is not None
     ]
 
     window.toggle_sidebar()
@@ -126,6 +151,7 @@ try:
     assert window.sidebar.width() == 238
 
     window.statistics.load()
+    assert window.statistics.project_combo.findData(project_id) >= 0
     sales_filter = window.statistics.department_combo.findData(
         department_ids["Savdo"]
     )

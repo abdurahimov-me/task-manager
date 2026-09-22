@@ -670,6 +670,7 @@ class EntityDialog(QDialog):
             "employees": "Xodim",
             "work_types": "Ish turi",
             "departments": "Bo‘lim",
+            "projects": "Loyiha",
         }
         noun = nouns[kind]
         action = "Tahrirlash" if row else "Yangi qo‘shish"
@@ -714,6 +715,53 @@ class EntityDialog(QDialog):
             self.department.setCurrentIndex(max(0, selected_index))
             root.addWidget(department_label)
             root.addWidget(self.department)
+            projects_label = QLabel("Biriktirilgan loyihalar")
+            projects_label.setObjectName("fieldLabel")
+            root.addWidget(projects_label)
+            selected_project_ids = db.employee_project_ids(row["id"]) if row else set()
+            projects = [
+                project
+                for project in db.all("projects", True)
+                if project["is_active"] or project["id"] in selected_project_ids
+            ]
+            self.project_checks = []
+            project_scroll = QScrollArea()
+            project_scroll.setWidgetResizable(True)
+            project_scroll.setFrameShape(QFrame.NoFrame)
+            project_scroll.setMinimumHeight(90)
+            project_scroll.setMaximumHeight(150)
+            project_box = QWidget()
+            project_layout = QVBoxLayout(project_box)
+            project_layout.setContentsMargins(10, 8, 10, 8)
+            project_layout.setSpacing(8)
+            if projects:
+                for project in projects:
+                    suffix = " (yakunlangan)" if not project["is_active"] else ""
+                    check = QCheckBox(f'{project["name"]}{suffix}')
+                    check.setProperty("project_id", project["id"])
+                    check.setChecked(project["id"] in selected_project_ids)
+                    check.setEnabled(bool(project["is_active"]))
+                    self.project_checks.append(check)
+                    project_layout.addWidget(check)
+            else:
+                no_projects = QLabel("Faol loyihalar hali yo‘q")
+                no_projects.setObjectName("muted")
+                project_layout.addWidget(no_projects)
+            project_layout.addStretch()
+            project_scroll.setWidget(project_box)
+            project_scroll.setStyleSheet(
+                "QScrollArea { background:#f9fafb; border:1px solid #eaecf0; border-radius:8px; }"
+            )
+            root.addWidget(project_scroll)
+        elif kind == "projects":
+            self.name = self.add_field(root, "Loyiha nomi *", row["name"] if row else "")
+            start_label = QLabel("Boshlanish sanasi *")
+            start_label.setObjectName("fieldLabel")
+            start_date = QDate.fromString(row["start_date"], Qt.ISODate) if row else QDate.currentDate()
+            self.start_date = CalendarDateEdit(start_date)
+            root.addWidget(start_label)
+            root.addWidget(self.start_date)
+            self.note = self.add_field(root, "Izoh", row["note"] if row else "")
         else:
             field_label = "Ish turi nomi *" if kind == "work_types" else "Bo‘lim nomi *"
             self.name = self.add_field(root, field_label, row["name"] if row else "")
@@ -759,8 +807,62 @@ class EntityDialog(QDialog):
                 self.first.text().strip(),
                 self.last.text().strip(),
                 self.department.currentData(),
+                [
+                    check.property("project_id")
+                    for check in self.project_checks
+                    if check.isChecked()
+                ],
+            )
+        if self.kind == "projects":
+            return (
+                self.name.text().strip(),
+                self.start_date.date().toString("yyyy-MM-dd"),
+                self.note.text().strip(),
             )
         return (self.name.text().strip(),)
+
+
+class ProjectCompletionDialog(QDialog):
+    def __init__(self, project, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Loyihani yakunlash")
+        self.setModal(True)
+        self.setMinimumWidth(420)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(26, 24, 26, 22)
+        root.setSpacing(15)
+
+        title = QLabel("Loyihani yakunlash")
+        title.setObjectName("dialogTitle")
+        description = QLabel(
+            f'“{project["name"]}” yakunlangach, yangi kunlik hisobda ko‘rinmaydi. '
+            "Oldingi hisobotlar va statistika saqlanib qoladi."
+        )
+        description.setObjectName("muted")
+        description.setWordWrap(True)
+        root.addWidget(title)
+        root.addWidget(description)
+
+        label = QLabel("Tugash sanasi *")
+        label.setObjectName("fieldLabel")
+        start_date = QDate.fromString(project["start_date"], Qt.ISODate)
+        selected_date = max(start_date, QDate.currentDate())
+        self.completed_at = CalendarDateEdit(selected_date)
+        self.completed_at.setMinimumDate(start_date)
+        root.addWidget(label)
+        root.addWidget(self.completed_at)
+
+        line = QFrame()
+        line.setObjectName("dialogLine")
+        root.addWidget(line)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        actions.addWidget(button("Bekor qilish", "secondary", self.reject))
+        actions.addWidget(button("Loyihani yakunlash", "primary", self.accept))
+        root.addLayout(actions)
+
+    def value(self):
+        return self.completed_at.date().toString("yyyy-MM-dd")
 
 
 class CrudPage(QWidget):
@@ -786,6 +888,7 @@ class CrudPage(QWidget):
             "employees": "Xodimlar",
             "work_types": "Ish turlari",
             "departments": "Bo‘limlar",
+            "projects": "Loyihalar",
         }
         title = QLabel(titles[kind])
         title.setObjectName("title")
@@ -793,6 +896,7 @@ class CrudPage(QWidget):
             "employees": "Jamoa a’zolari, ularning bo‘limi va holatini boshqaring",
             "work_types": "Kunlik hisobda ishlatiladigan ish turlarini boshqaring",
             "departments": "Xodimlarni ajratish uchun tashkilot bo‘limlarini boshqaring",
+            "projects": "Loyihalarni, ularning muddatlari va holatini boshqaring",
         }
         subtitle = QLabel(subtitles[kind])
         subtitle.setObjectName("subtitle")
@@ -804,6 +908,7 @@ class CrudPage(QWidget):
             "employees": "+  Xodim qo‘shish",
             "work_types": "+  Ish turi qo‘shish",
             "departments": "+  Bo‘lim qo‘shish",
+            "projects": "+  Loyiha qo‘shish",
         }
         add_text = add_texts[kind]
         header.addWidget(button(add_text, "primary", self.add))
@@ -819,6 +924,7 @@ class CrudPage(QWidget):
             "employees": "Xodim yoki bo‘limni qidirish...",
             "work_types": "Ish turini qidirish...",
             "departments": "Bo‘limni qidirish...",
+            "projects": "Loyiha yoki biriktirilgan xodimni qidirish...",
         }
         self.search.setPlaceholderText(placeholders[kind])
         self.search.setClearButtonEnabled(True)
@@ -830,7 +936,11 @@ class CrudPage(QWidget):
             self.department_filter.setMinimumWidth(210)
             self.department_filter.setCursor(Qt.PointingHandCursor)
             self.department_filter.currentIndexChanged.connect(self.load)
-        self.inactive = QCheckBox("Arxivdagilarni ko‘rsatish")
+        self.inactive = QCheckBox(
+            "Yakunlanganlarni ko‘rsatish"
+            if kind == "projects"
+            else "Arxivdagilarni ko‘rsatish"
+        )
         self.inactive.toggled.connect(self.load)
         filter_layout.addWidget(self.search)
         if self.department_filter:
@@ -857,7 +967,15 @@ class CrudPage(QWidget):
         table_header_layout.addWidget(self.count_label)
         table_header_layout.addStretch()
         table_header_layout.addWidget(button("Tahrirlash", "secondary", self.edit))
-        table_header_layout.addWidget(button("Arxiv / faollashtirish", "quiet", self.toggle))
+        table_header_layout.addWidget(
+            button(
+                "Yakunlash / qayta ochish"
+                if kind == "projects"
+                else "Arxiv / faollashtirish",
+                "quiet",
+                self.toggle,
+            )
+        )
         table_header_layout.addWidget(button("O‘chirish", "danger", self.delete))
         card_layout.addWidget(table_header)
 
@@ -869,11 +987,13 @@ class CrudPage(QWidget):
             "employees": "Xodimlar hali yo‘q",
             "work_types": "Ish turlari hali yo‘q",
             "departments": "Bo‘limlar hali yo‘q",
+            "projects": "Loyihalar hali yo‘q",
         }
         empty_texts = {
             "employees": "Yuqoridagi “Xodim qo‘shish” tugmasi orqali birinchi xodimni kiriting.",
             "work_types": "Yuqoridagi “Ish turi qo‘shish” tugmasi orqali birinchi turni kiriting.",
             "departments": "Yuqoridagi “Bo‘lim qo‘shish” tugmasi orqali birinchi bo‘limni kiriting.",
+            "projects": "Yuqoridagi “Loyiha qo‘shish” tugmasi orqali birinchi loyihani kiriting.",
         }
         empty_title = empty_titles[kind]
         empty_text = empty_texts[kind]
@@ -920,9 +1040,10 @@ class CrudPage(QWidget):
                 ]
 
         headers = {
-            "employees": ["№", "XODIM", "BO‘LIM", "QO‘SHILGAN SANA", "HOLATI"],
+            "employees": ["№", "XODIM", "BO‘LIM", "LOYIHALARI", "QO‘SHILGAN SANA", "HOLATI"],
             "work_types": ["№", "ISH TURI", "HOLATI"],
             "departments": ["№", "BO‘LIM", "HOLATI"],
+            "projects": ["№", "LOYIHA", "XODIMLAR", "BOSHLANGAN", "YAKUNLANGAN", "HOLATI"],
         }[self.kind]
         self.table.clear()
         self.table.setColumnCount(len(headers))
@@ -938,9 +1059,23 @@ class CrudPage(QWidget):
             values = [row_index + 1, name]
             if self.kind == "employees":
                 values.append(row["department_name"] or "Bo‘limsiz")
+                values.append(row["project_names"] or "Biriktirilmagan")
                 created_date = QDate.fromString(row["created_at"][:10], Qt.ISODate)
                 values.append(created_date.toString("dd.MM.yyyy"))
-            values.append("Faol" if row["is_active"] else "Arxivda")
+            elif self.kind == "projects":
+                values.append(row["employee_names"] or "Biriktirilmagan")
+                start_date = QDate.fromString(row["start_date"], Qt.ISODate)
+                values.append(start_date.toString("dd.MM.yyyy"))
+                values.append(
+                    QDate.fromString(row["completed_at"], Qt.ISODate).toString("dd.MM.yyyy")
+                    if row["completed_at"]
+                    else "—"
+                )
+            values.append(
+                "Faol"
+                if row["is_active"]
+                else ("Yakunlangan" if self.kind == "projects" else "Arxivda")
+            )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.UserRole, row["id"])
@@ -972,7 +1107,12 @@ class CrudPage(QWidget):
         available_width = max(
             0, self.table.viewport().width() - self.INDEX_COLUMN_WIDTH
         )
-        weights = [0.30, 0.30, 0.22, 0.18] if self.kind == "employees" else [0.75, 0.25]
+        if self.kind == "employees":
+            weights = [0.20, 0.16, 0.28, 0.20, 0.16]
+        elif self.kind == "projects":
+            weights = [0.24, 0.29, 0.15, 0.16, 0.16]
+        else:
+            weights = [0.75, 0.25]
         assigned_width = 0
         for offset, weight in enumerate(weights, 1):
             if offset == len(weights):
@@ -1004,6 +1144,7 @@ class CrudPage(QWidget):
                 "employees": self.db.add_employee,
                 "work_types": self.db.add_work_type,
                 "departments": self.db.add_department,
+                "projects": self.db.add_project,
             }
             action = actions[self.kind]
             action(*dialog.values())
@@ -1024,6 +1165,7 @@ class CrudPage(QWidget):
                 "employees": self.db.update_employee,
                 "work_types": self.db.update_work_type,
                 "departments": self.db.update_department,
+                "projects": self.db.update_project,
             }
             action = actions[self.kind]
             action(row["id"], *dialog.values())
@@ -1036,7 +1178,15 @@ class CrudPage(QWidget):
         row = self.selected()
         if not row:
             return
-        self.db.toggle_active(self.kind, row["id"], not row["is_active"])
+        if self.kind == "projects" and row["is_active"]:
+            dialog = ProjectCompletionDialog(row, self)
+            if not dialog.exec():
+                return
+            self.db.complete_project(row["id"], dialog.value())
+        elif self.kind == "projects":
+            self.db.reopen_project(row["id"])
+        else:
+            self.db.toggle_active(self.kind, row["id"], not row["is_active"])
         self.load()
         self.changed.emit()
 
@@ -1052,7 +1202,12 @@ class CrudPage(QWidget):
         result = QMessageBox.question(
             self,
             "O‘chirishni tasdiqlang",
-            f'“{name}” o‘chirilsinmi?\n\nAgar hisoblarda ishlatilgan bo‘lsa, arxivga olinadi.',
+            f'“{name}” o‘chirilsinmi?\n\n'
+            + (
+                "Agar hisobotlarda ishlatilgan bo‘lsa, loyiha yakunlanganlar ro‘yxatiga o‘tkaziladi."
+                if self.kind == "projects"
+                else "Agar hisoblarda ishlatilgan bo‘lsa, arxivga olinadi."
+            ),
         )
         if result != QMessageBox.Yes:
             return
@@ -1062,13 +1217,19 @@ class CrudPage(QWidget):
         message = (
             "Yozuv butunlay o‘chirildi."
             if deleted
-            else "Tarixiy ma’lumotlar saqlanishi uchun yozuv arxivga olindi."
+            else (
+                "Tarixiy ma’lumotlar saqlanishi uchun loyiha yakunlandi."
+                if self.kind == "projects"
+                else "Tarixiy ma’lumotlar saqlanishi uchun yozuv arxivga olindi."
+            )
         )
         QMessageBox.information(self, "Tayyor", message)
 
 
 class DailyPage(QWidget):
-    EMPLOYEE_COLUMN_WIDTH = 220
+    EMPLOYEE_COLUMN_WIDTH = 190
+    PROJECT_COLUMN_WIDTH = 230
+    FROZEN_COLUMNS_WIDTH = EMPLOYEE_COLUMN_WIDTH + PROJECT_COLUMN_WIDTH
     WORK_TYPE_COLUMN_WIDTH = 150
     HEADER_HEIGHT = 78
 
@@ -1115,10 +1276,10 @@ class DailyPage(QWidget):
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
         self.employee_metric = MetricCard("Faol xodimlar")
-        self.type_metric = MetricCard("Ish turlari")
+        self.project_metric = MetricCard("Faol loyihalar")
         self.total_metric = MetricCard("Kunlik jami", accent=True)
         metrics.addWidget(self.employee_metric)
-        metrics.addWidget(self.type_metric)
+        metrics.addWidget(self.project_metric)
         metrics.addWidget(self.total_metric)
         root.addLayout(metrics)
 
@@ -1160,13 +1321,13 @@ class DailyPage(QWidget):
         self.employee_table = QTableWidget()
         self.employee_table.setObjectName("frozenEmployees")
         configure_table(self.employee_table)
-        self.employee_table.setColumnCount(1)
-        self.employee_table.setHorizontalHeaderLabels(["XODIM"])
+        self.employee_table.setColumnCount(2)
+        self.employee_table.setHorizontalHeaderLabels(["XODIM", "LOYIHA"])
         self.employee_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.employee_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.employee_table.setSelectionMode(QAbstractItemView.NoSelection)
         self.employee_table.setFocusPolicy(Qt.NoFocus)
-        self.employee_table.setFixedWidth(self.EMPLOYEE_COLUMN_WIDTH)
+        self.employee_table.setFixedWidth(self.FROZEN_COLUMNS_WIDTH)
 
         self.table = QuantityTable()
         configure_table(self.table)
@@ -1188,7 +1349,7 @@ class DailyPage(QWidget):
         card_layout.addWidget(self.table_container)
         self.empty_state = EmptyState(
             "Jadval hali tayyor emas",
-            "Tanlangan bo‘limda faol xodim va kamida bitta ish turi borligini tekshiring.",
+            "Tanlangan bo‘limdagi xodimlarga faol loyiha biriktirilganini va ish turi mavjudligini tekshiring.",
         )
         card_layout.addWidget(self.empty_state, 1)
         root.addWidget(card, 1)
@@ -1247,17 +1408,18 @@ class DailyPage(QWidget):
         self.loading = True
         self.refresh_department_tabs()
         work_date = self.date.date().toString("yyyy-MM-dd")
-        self.employees, self.types, values = self.db.daily_matrix(
+        self.assignments, self.types, values = self.db.daily_matrix(
             work_date, self.selected_department_id
         )
 
+        self.employee_table.clearSpans()
         self.employee_table.clear()
-        self.employee_table.setColumnCount(1)
-        self.employee_table.setHorizontalHeaderLabels(["XODIM"])
-        self.employee_table.setRowCount(len(self.employees))
+        self.employee_table.setColumnCount(2)
+        self.employee_table.setHorizontalHeaderLabels(["XODIM", "LOYIHA"])
+        self.employee_table.setRowCount(len(self.assignments))
 
         self.table.clear()
-        self.table.setRowCount(len(self.employees))
+        self.table.setRowCount(len(self.assignments))
         self.table.setColumnCount(len(self.types))
         self.table.setHorizontalHeaderLabels(
             [self.work_type_header(work_type["name"]) for work_type in self.types]
@@ -1265,18 +1427,40 @@ class DailyPage(QWidget):
         for column, work_type in enumerate(self.types):
             self.table.horizontalHeaderItem(column).setToolTip(work_type["name"])
 
-        for row_index, employee in enumerate(self.employees):
-            name = QTableWidgetItem(f'{employee["last_name"]} {employee["first_name"]}')
-            name.setFlags(name.flags() & ~Qt.ItemIsEditable)
-            name.setForeground(QColor("#1d2939"))
-            name.setBackground(QColor("#f9fafb"))
-            self.employee_table.setItem(row_index, 0, name)
-
+        employee_groups = {}
+        for row_index, assignment in enumerate(self.assignments):
+            employee_groups.setdefault(assignment["employee_id"], []).append(row_index)
+            project = QTableWidgetItem(assignment["project_name"])
+            project.setFlags(project.flags() & ~Qt.ItemIsEditable)
+            project.setForeground(QColor("#344054"))
+            project.setToolTip(assignment["project_name"])
+            self.employee_table.setItem(row_index, 1, project)
             for column, work_type in enumerate(self.types):
-                quantity = values.get((employee["id"], work_type["id"]), 0)
+                quantity = values.get(
+                    (
+                        assignment["employee_id"],
+                        assignment["project_id"],
+                        work_type["id"],
+                    ),
+                    0,
+                )
                 item = QTableWidgetItem(str(quantity))
                 item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row_index, column, item)
+
+        for employee_id, group_rows in employee_groups.items():
+            first_row = group_rows[0]
+            assignment = self.assignments[first_row]
+            name = QTableWidgetItem(
+                f'{assignment["last_name"]} {assignment["first_name"]}'
+            )
+            name.setFlags(name.flags() & ~Qt.ItemIsEditable)
+            name.setForeground(QColor("#1d2939"))
+            name.setBackground(QColor("#f4f7fb"))
+            name.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.employee_table.setItem(first_row, 0, name)
+            if len(group_rows) > 1:
+                self.employee_table.setSpan(first_row, 0, len(group_rows), 1)
 
         table_header = self.table.horizontalHeader()
         table_header.setFixedHeight(self.HEADER_HEIGHT)
@@ -1286,11 +1470,14 @@ class DailyPage(QWidget):
             self.table.setColumnWidth(column, self.WORK_TYPE_COLUMN_WIDTH)
         employee_header = self.employee_table.horizontalHeader()
         employee_header.setFixedHeight(self.HEADER_HEIGHT)
-        employee_header.setSectionResizeMode(0, QHeaderView.Fixed)
-        self.employee_table.setColumnWidth(0, self.EMPLOYEE_COLUMN_WIDTH - 1)
+        employee_header.setSectionResizeMode(QHeaderView.Fixed)
+        self.employee_table.setColumnWidth(0, self.EMPLOYEE_COLUMN_WIDTH)
+        self.employee_table.setColumnWidth(1, self.PROJECT_COLUMN_WIDTH - 2)
 
-        self.employee_metric.set_value(len(self.employees))
-        self.type_metric.set_value(len(self.types))
+        self.employee_metric.set_value(len(employee_groups))
+        self.project_metric.set_value(
+            len({assignment["project_id"] for assignment in self.assignments})
+        )
         self.total_metric.set_value(sum(values.values()))
         selected_date = self.date.date()
         self.date_label.setText(
@@ -1299,7 +1486,7 @@ class DailyPage(QWidget):
         )
         self.save_state.setText("●  Avtomatik saqlanadi")
         self.save_state.setStyleSheet("color: #98a2b3;")
-        has_matrix = bool(self.employees and self.types)
+        has_matrix = bool(self.assignments and self.types)
         self.table_container.setVisible(has_matrix)
         self.empty_state.setVisible(not has_matrix)
         self.loading = False
@@ -1318,7 +1505,8 @@ class DailyPage(QWidget):
             self.loading = False
 
         self.db.save_quantity(
-            self.employees[item.row()]["id"],
+            self.assignments[item.row()]["employee_id"],
+            self.assignments[item.row()]["project_id"],
             self.types[item.column()]["id"],
             self.date.date().toString("yyyy-MM-dd"),
             value,
@@ -1352,6 +1540,7 @@ class StatisticsPage(QWidget):
         self.chart_employee_rows = []
         self.selected_employee_id = None
         self.selected_department_id = None
+        self.selected_project_id = None
         self.selected_work_type_id = None
         self.employee_bar_sets = []
         self.period_employee_work = []
@@ -1362,6 +1551,7 @@ class StatisticsPage(QWidget):
         self.daily_work_type_totals = {}
         self.daily_number_of_days = 0
         self.departments = []
+        self.projects = []
         self.chart_tooltip = QLabel(self, Qt.ToolTip | Qt.WindowTransparentForInput)
         self.chart_tooltip.setObjectName("chartTooltip")
         self.chart_tooltip.setTextFormat(Qt.PlainText)
@@ -1433,6 +1623,17 @@ class StatisticsPage(QWidget):
         department_filter_box.addWidget(self.department_combo)
         selection_filter_layout.addLayout(department_filter_box, 1)
 
+        project_filter_box = QVBoxLayout()
+        project_filter_box.setSpacing(4)
+        project_filter_label = QLabel("Loyiha")
+        project_filter_label.setObjectName("fieldLabel")
+        project_filter_box.addWidget(project_filter_label)
+        self.project_combo = QComboBox()
+        self.project_combo.setMinimumWidth(210)
+        self.project_combo.setCursor(Qt.PointingHandCursor)
+        project_filter_box.addWidget(self.project_combo)
+        selection_filter_layout.addLayout(project_filter_box, 1)
+
         work_filter_box = QVBoxLayout()
         work_filter_box.setSpacing(4)
         work_filter_label = QLabel("Ish turi")
@@ -1452,6 +1653,7 @@ class StatisticsPage(QWidget):
 
         self.work_type_combo.currentIndexChanged.connect(self.select_work_type)
         self.department_combo.currentIndexChanged.connect(self.select_department)
+        self.project_combo.currentIndexChanged.connect(self.select_project)
 
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
@@ -1579,8 +1781,9 @@ class StatisticsPage(QWidget):
         date_from = self.date_from.date().toString("yyyy-MM-dd")
         date_to = self.date_to.date().toString("yyyy-MM-dd")
         self.rebuild_department_combo()
+        self.rebuild_project_combo()
         work_type_rows = self.db.statistics_work_types(
-            date_from, date_to, self.selected_department_id
+            date_from, date_to, self.selected_department_id, self.selected_project_id
         )
         self.work_types = [
             {
@@ -1604,7 +1807,7 @@ class StatisticsPage(QWidget):
                 "total": int(row["total"]),
             }
             for row in self.db.employee_work_type_totals(
-                date_from, date_to, self.selected_department_id
+                date_from, date_to, self.selected_department_id, self.selected_project_id
             )
         ]
         self.rebuild_work_type_combo()
@@ -1632,6 +1835,25 @@ class StatisticsPage(QWidget):
 
     def select_department(self, _index):
         self.selected_department_id = self.department_combo.currentData()
+        self.load()
+
+    def rebuild_project_combo(self):
+        self.projects = list(self.db.all("projects", True))
+        valid_project_ids = {project["id"] for project in self.projects}
+        if self.selected_project_id not in valid_project_ids:
+            self.selected_project_id = None
+        self.project_combo.blockSignals(True)
+        self.project_combo.clear()
+        self.project_combo.addItem("Barcha loyihalar", None)
+        for project in sorted(self.projects, key=lambda item: item["name"].casefold()):
+            suffix = " (yakunlangan)" if not project["is_active"] else ""
+            self.project_combo.addItem(f'{project["name"]}{suffix}', project["id"])
+        selected_index = self.project_combo.findData(self.selected_project_id)
+        self.project_combo.setCurrentIndex(max(0, selected_index))
+        self.project_combo.blockSignals(False)
+
+    def select_project(self, _index):
+        self.selected_project_id = self.project_combo.currentData()
         self.load()
 
     def rebuild_work_type_combo(self):
@@ -1860,7 +2082,7 @@ class StatisticsPage(QWidget):
         date_from = self.date_from.date().toString("yyyy-MM-dd")
         date_to = self.date_to.date().toString("yyyy-MM-dd")
         records = self.db.employee_daily_work_types(
-            employee["id"], date_from, date_to
+            employee["id"], date_from, date_to, self.selected_project_id
         )
 
         selected_date = self.date_from.date()
@@ -2058,6 +2280,7 @@ class MainWindow(QMainWindow):
         self.daily = DailyPage(self.db)
         self.employees = CrudPage(self.db, "employees")
         self.departments = CrudPage(self.db, "departments")
+        self.projects = CrudPage(self.db, "projects")
         self.types = CrudPage(self.db, "work_types")
         self.statistics = StatisticsPage(self.db)
         for page in (
@@ -2065,6 +2288,7 @@ class MainWindow(QMainWindow):
             self.daily,
             self.employees,
             self.departments,
+            self.projects,
             self.types,
         ):
             self.stack.addWidget(page)
@@ -2075,6 +2299,7 @@ class MainWindow(QMainWindow):
             ("▦", "Kunlik hisob"),
             ("♙", "Xodimlar"),
             ("▣", "Bo‘limlar"),
+            ("◆", "Loyihalar"),
             ("✓", "Ish turlari"),
         )
         for index, (icon, label) in enumerate(self.nav_items):
@@ -2101,6 +2326,9 @@ class MainWindow(QMainWindow):
         self.employees.changed.connect(self.daily.load)
         self.departments.changed.connect(self.employees.load)
         self.departments.changed.connect(self.daily.load)
+        self.projects.changed.connect(self.employees.load)
+        self.projects.changed.connect(self.daily.load)
+        self.employees.changed.connect(self.projects.load)
         self.types.changed.connect(self.daily.load)
         self.navigate(0)
 

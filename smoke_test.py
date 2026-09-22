@@ -16,8 +16,12 @@ try:
     other_department_id = db.connection.execute(
         "SELECT id FROM departments WHERE name='__OTHER_DEPARTMENT__'"
     ).fetchone()[0]
-    db.add_employee("__SMOKE__", "__SMOKE__", department_id)
-    db.add_employee("__OTHER__", "__OTHER__", other_department_id)
+    db.add_project("__SMOKE_PROJECT__", "2090-01-01")
+    project_id = db.connection.execute(
+        "SELECT id FROM projects WHERE name='__SMOKE_PROJECT__'"
+    ).fetchone()[0]
+    db.add_employee("__SMOKE__", "__SMOKE__", department_id, [project_id])
+    db.add_employee("__OTHER__", "__OTHER__", other_department_id, [project_id])
     db.add_work_type("__SMOKE_TYPE__")
     employee_id = db.connection.execute(
         "SELECT id FROM employees WHERE first_name='__SMOKE__'"
@@ -28,10 +32,10 @@ try:
     other_employee_id = db.connection.execute(
         "SELECT id FROM employees WHERE first_name='__OTHER__'"
     ).fetchone()[0]
-    db.save_quantity(employee_id, work_type_id, "2099-01-01", 3)
-    db.save_quantity(other_employee_id, work_type_id, "2099-01-01", 7)
+    db.save_quantity(employee_id, project_id, work_type_id, "2099-01-01", 3)
+    db.save_quantity(other_employee_id, project_id, work_type_id, "2099-01-01", 7)
     assert db.daily_matrix("2099-01-01", department_id)[2] == {
-        (employee_id, work_type_id): 3
+        (employee_id, project_id, work_type_id): 3
     }
     assert db.daily_matrix("2099-01-01", 0)[0] == []
     totals = db.employee_totals("2099-01-01", "2099-01-31", department_id)
@@ -65,6 +69,12 @@ try:
     ] == [(employee_id, work_type_id, 3)]
     assert db.delete_if_unused("departments", department_id) is False
     assert db.delete_if_unused("work_types", work_type_id) is False
+    db.complete_project(project_id, "2099-01-01")
+    assert db.daily_matrix("2099-01-01", department_id)[0]
+    assert db.daily_matrix("2099-01-02", department_id)[0] == []
+    assert db.all("projects", False) == []
+    db.reopen_project(project_id)
+    assert db.all("projects", False)[0]["id"] == project_id
     db.connection.close()
 
     legacy = sqlite3.connect(migration_database)
@@ -81,6 +91,38 @@ try:
         )
         """
     )
+    legacy.execute(
+        "INSERT INTO employees(id,first_name,last_name) VALUES(1,'Eski','Xodim')"
+    )
+    legacy.execute(
+        """
+        CREATE TABLE work_types(
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            unit TEXT NOT NULL DEFAULT 'marta',
+            note TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    legacy.execute("INSERT INTO work_types(id,name) VALUES(1,'Eski ish')")
+    legacy.execute(
+        """
+        CREATE TABLE daily_entries(
+            id INTEGER PRIMARY KEY,
+            employee_id INTEGER NOT NULL,
+            work_type_id INTEGER NOT NULL,
+            work_date TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(employee_id,work_type_id,work_date)
+        )
+        """
+    )
+    legacy.execute(
+        "INSERT INTO daily_entries(employee_id,work_type_id,work_date,quantity) VALUES(1,1,'2026-01-01',5)"
+    )
     legacy.commit()
     legacy.close()
     migrated = database.Database(migration_database)
@@ -89,6 +131,14 @@ try:
         for row in migrated.connection.execute("PRAGMA table_info(employees)")
     }
     assert "department_id" in migrated_columns
+    migrated_entry = migrated.connection.execute(
+        "SELECT project_id,quantity FROM daily_entries"
+    ).fetchone()
+    assert migrated_entry["project_id"] is not None
+    assert migrated_entry["quantity"] == 5
+    assert migrated.connection.execute(
+        "SELECT name FROM projects WHERE id=?", (migrated_entry["project_id"],)
+    ).fetchone()["name"] == "Eski maʼlumotlar"
     migrated.connection.close()
 finally:
     for path in (test_database, migration_database):

@@ -46,11 +46,13 @@ with patch("database.app_data_dir", return_value=OUTPUT), patch(
 db = window.db
 for name in ("Savdo", "Moliya", "Kadrlar"):
     db.add_department(name)
+for name in ("Yangi ofis", "Chilonzor filiali", "Angren ombori"):
+    db.add_project(name, "2026-08-01")
 for index, (first, last) in enumerate([
     ("Aziz", "Karimov"), ("Malika", "Rahimova"), ("Javohir", "Aliyev"),
     ("Dilnoza", "Ismoilova"), ("Nigora", "Tursunova"), ("Sardor", "Nazarov"),
 ]):
-    db.add_employee(first, last, index % 3 + 1)
+    db.add_employee(first, last, index % 3 + 1, [index % 3 + 1])
 for row in db.all("employees"):
     db.connection.execute(
         "UPDATE employees SET created_at=? WHERE id=?",
@@ -67,7 +69,8 @@ for day in range(2, 9):
     for employee in range(1, 6):
         for work_type in range(1, 5):
             quantity = (employee * 3 + day * 2 + work_type) % 9 + 1
-            db.save_quantity(employee, work_type, f"2026-09-{day:02d}", quantity)
+            project = (employee - 1) % 3 + 1
+            db.save_quantity(employee, project, work_type, f"2026-09-{day:02d}", quantity)
 window.employees.load()
 window.types.load()
 window.daily.date.setDate(QDate(2026, 9, 8))
@@ -101,7 +104,7 @@ dialog.last.setText("Sobirov")
 dialog.show()
 capture("03-add-employee", dialog)
 dialog.close()
-window.navigate(3)
+window.navigate(5)
 capture("04-work-types", window.types, QRect(0, 0, window.types.width(), 680))
 dialog = EntityDialog("work_types", parent=window, db=db)
 dialog.name.setText("Buyurtma tayyorlash")
