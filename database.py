@@ -20,7 +20,7 @@ class Database:
         self.connection.executescript("""
         CREATE TABLE IF NOT EXISTS departments(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY,first_name TEXT NOT NULL,last_name TEXT NOT NULL,department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,phone TEXT NOT NULL DEFAULT '',note TEXT NOT NULL DEFAULT '',is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS work_types(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,unit TEXT NOT NULL DEFAULT 'marta',note TEXT NOT NULL DEFAULT '',is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS work_types(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,unit TEXT NOT NULL DEFAULT 'marta',note TEXT NOT NULL DEFAULT '',sort_order INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS projects(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,start_date TEXT NOT NULL,completed_at TEXT,note TEXT NOT NULL DEFAULT '',is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS project_employees(project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(project_id,employee_id));
         CREATE TABLE IF NOT EXISTS daily_entries(id INTEGER PRIMARY KEY,employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,work_type_id INTEGER NOT NULL REFERENCES work_types(id) ON DELETE RESTRICT,work_date TEXT NOT NULL,quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity>=0),updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(employee_id,project_id,work_type_id,work_date));
@@ -31,6 +31,16 @@ class Database:
         if "department_id" not in employee_columns:
             self.connection.execute(
                 "ALTER TABLE employees ADD COLUMN department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL"
+            )
+        work_type_columns = {
+            row["name"] for row in self.connection.execute("PRAGMA table_info(work_types)")
+        }
+        if "sort_order" not in work_type_columns:
+            self.connection.execute(
+                "ALTER TABLE work_types ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
+            )
+            self.connection.execute(
+                "UPDATE work_types SET sort_order=id WHERE sort_order=0"
             )
         self.connection.execute(
             "CREATE INDEX IF NOT EXISTS ix_employees_department ON employees(department_id)"
@@ -130,6 +140,10 @@ class Database:
                 ORDER BY p.is_active DESC, p.id DESC
                 """
             ).fetchall()
+        if table == "work_types":
+            return self.connection.execute(
+                f"SELECT * FROM work_types{where} ORDER BY sort_order, id"
+            ).fetchall()
         return self.connection.execute(f"SELECT * FROM {table}{where} ORDER BY id DESC").fetchall()
 
     def add_employee(self, first, last, department_id=None, project_ids=None):
@@ -207,10 +221,42 @@ class Database:
         self.connection.commit()
 
     def add_work_type(self, name):
-        self.connection.execute("INSERT INTO work_types(name) VALUES(?)", (name.strip(),)); self.connection.commit()
+        next_order = self.connection.execute(
+            "SELECT COALESCE(MAX(sort_order),0)+1 FROM work_types"
+        ).fetchone()[0]
+        self.connection.execute(
+            "INSERT INTO work_types(name,sort_order) VALUES(?,?)",
+            (name.strip(), next_order),
+        )
+        self.connection.commit()
 
     def update_work_type(self, row_id, name):
         self.connection.execute("UPDATE work_types SET name=? WHERE id=?", (name.strip(),row_id)); self.connection.commit()
+
+    def move_work_type(self, row_id, direction, include_inactive=False):
+        where = "" if include_inactive else " WHERE is_active=1"
+        rows = self.connection.execute(
+            f"SELECT id,sort_order FROM work_types{where} ORDER BY sort_order,id"
+        ).fetchall()
+        current_index = next(
+            (index for index, row in enumerate(rows) if row["id"] == row_id), None
+        )
+        if current_index is None:
+            return False
+        target_index = current_index + direction
+        if not 0 <= target_index < len(rows):
+            return False
+        current, target = rows[current_index], rows[target_index]
+        self.connection.execute(
+            "UPDATE work_types SET sort_order=? WHERE id=?",
+            (target["sort_order"], current["id"]),
+        )
+        self.connection.execute(
+            "UPDATE work_types SET sort_order=? WHERE id=?",
+            (current["sort_order"], target["id"]),
+        )
+        self.connection.commit()
+        return True
 
     def toggle_active(self, table, row_id, active):
         if table == "projects":

@@ -83,6 +83,10 @@ try:
     assert window.types.table.horizontalHeaderItem(0).text() == "№"
     assert window.departments.table.columnWidth(0) == 56
     assert window.types.table.columnWidth(0) == 56
+    moved_type_id = window.types.rows[0]["id"]
+    window.types.table.setCurrentCell(0, 1)
+    window.types.move_work_type(1)
+    assert db.all("work_types", False)[1]["id"] == moved_type_id
     assert abs(
         sum(window.departments.table.columnWidth(column) for column in range(3))
         - window.departments.table.viewport().width()
@@ -105,19 +109,18 @@ try:
     employee_names = [
         window.daily.employee_table.item(row, 0).text()
         for row in range(window.daily.employee_table.rowCount())
-        if window.daily.employee_table.item(row, 0) is not None
     ]
     assert "Valiyev Ali" in employee_names
-    ali_row = next(
+    ali_rows = [
         row
         for row in range(window.daily.employee_table.rowCount())
-        if window.daily.employee_table.item(row, 0) is not None
-        and window.daily.employee_table.item(row, 0).text() == "Valiyev Ali"
-    )
-    assert window.daily.employee_table.rowSpan(ali_row, 0) == 2
+        if window.daily.employee_table.item(row, 0).text() == "Valiyev Ali"
+    ]
+    assert len(ali_rows) == 2
+    assert all(window.daily.employee_table.rowSpan(row, 0) == 1 for row in ali_rows)
     assert {
         window.daily.employee_table.item(row, 1).text()
-        for row in (ali_row, ali_row + 1)
+        for row in ali_rows
     } == {"Yangi ofis", "Angren ombori"}
     assert all(
         window.daily.table.columnWidth(column)
@@ -141,7 +144,6 @@ try:
     assert "Valiyev Ali" in [
         window.daily.employee_table.item(row, 0).text()
         for row in range(window.daily.employee_table.rowCount())
-        if window.daily.employee_table.item(row, 0) is not None
     ]
 
     window.toggle_sidebar()

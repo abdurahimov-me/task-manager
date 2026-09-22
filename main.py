@@ -726,11 +726,15 @@ class EntityDialog(QDialog):
             ]
             self.project_checks = []
             project_scroll = QScrollArea()
+            project_scroll.setObjectName("projectPicker")
             project_scroll.setWidgetResizable(True)
             project_scroll.setFrameShape(QFrame.NoFrame)
             project_scroll.setMinimumHeight(90)
             project_scroll.setMaximumHeight(150)
+            project_scroll.viewport().setStyleSheet("background: #f9fafb;")
             project_box = QWidget()
+            project_box.setObjectName("projectPickerContent")
+            project_box.setStyleSheet("background: #f9fafb;")
             project_layout = QVBoxLayout(project_box)
             project_layout.setContentsMargins(10, 8, 10, 8)
             project_layout.setSpacing(8)
@@ -744,13 +748,22 @@ class EntityDialog(QDialog):
                     self.project_checks.append(check)
                     project_layout.addWidget(check)
             else:
-                no_projects = QLabel("Faol loyihalar hali yo‘q")
+                no_projects = QLabel(
+                    "Faol loyihalar hali yo‘q.\n"
+                    "Avval “Loyihalar” bo‘limidan loyiha yarating."
+                )
                 no_projects.setObjectName("muted")
+                no_projects.setWordWrap(True)
+                no_projects.setAlignment(Qt.AlignCenter)
+                no_projects.setStyleSheet(
+                    "background: transparent; color: #667085; padding: 12px;"
+                )
                 project_layout.addWidget(no_projects)
             project_layout.addStretch()
             project_scroll.setWidget(project_box)
             project_scroll.setStyleSheet(
-                "QScrollArea { background:#f9fafb; border:1px solid #eaecf0; border-radius:8px; }"
+                "QScrollArea#projectPicker { background:#f9fafb; "
+                "border:1px solid #eaecf0; border-radius:8px; }"
             )
             root.addWidget(project_scroll)
         elif kind == "projects":
@@ -966,6 +979,13 @@ class CrudPage(QWidget):
         table_header_layout.addWidget(table_title)
         table_header_layout.addWidget(self.count_label)
         table_header_layout.addStretch()
+        if kind == "work_types":
+            move_up = button("↑  Yuqoriga", "quiet", lambda: self.move_work_type(-1))
+            move_up.setToolTip("Tanlangan ish turini bir pog‘ona yuqoriga ko‘chirish")
+            move_down = button("↓  Pastga", "quiet", lambda: self.move_work_type(1))
+            move_down.setToolTip("Tanlangan ish turini bir pog‘ona pastga ko‘chirish")
+            table_header_layout.addWidget(move_up)
+            table_header_layout.addWidget(move_down)
         table_header_layout.addWidget(button("Tahrirlash", "secondary", self.edit))
         table_header_layout.addWidget(
             button(
@@ -1134,6 +1154,22 @@ class CrudPage(QWidget):
             )
             return None
         return self.rows[index]
+
+    def move_work_type(self, direction):
+        row = self.selected()
+        if not row:
+            return
+        if not self.db.move_work_type(
+            row["id"], direction, include_inactive=self.inactive.isChecked()
+        ):
+            return
+        selected_id = row["id"]
+        self.load()
+        for row_index, work_type in enumerate(self.rows):
+            if work_type["id"] == selected_id:
+                self.table.setCurrentCell(row_index, 1)
+                break
+        self.changed.emit()
 
     def add(self):
         dialog = EntityDialog(self.kind, parent=self, db=self.db)
@@ -1430,6 +1466,14 @@ class DailyPage(QWidget):
         employee_groups = {}
         for row_index, assignment in enumerate(self.assignments):
             employee_groups.setdefault(assignment["employee_id"], []).append(row_index)
+            name_text = f'{assignment["last_name"]} {assignment["first_name"]}'
+            name = QTableWidgetItem(name_text)
+            name.setFlags(name.flags() & ~Qt.ItemIsEditable)
+            name.setForeground(QColor("#1d2939"))
+            name.setBackground(QColor("#f4f7fb"))
+            name.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            name.setToolTip(name_text)
+            self.employee_table.setItem(row_index, 0, name)
             project = QTableWidgetItem(assignment["project_name"])
             project.setFlags(project.flags() & ~Qt.ItemIsEditable)
             project.setForeground(QColor("#344054"))
@@ -1447,20 +1491,6 @@ class DailyPage(QWidget):
                 item = QTableWidgetItem(str(quantity))
                 item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row_index, column, item)
-
-        for employee_id, group_rows in employee_groups.items():
-            first_row = group_rows[0]
-            assignment = self.assignments[first_row]
-            name = QTableWidgetItem(
-                f'{assignment["last_name"]} {assignment["first_name"]}'
-            )
-            name.setFlags(name.flags() & ~Qt.ItemIsEditable)
-            name.setForeground(QColor("#1d2939"))
-            name.setBackground(QColor("#f4f7fb"))
-            name.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self.employee_table.setItem(first_row, 0, name)
-            if len(group_rows) > 1:
-                self.employee_table.setSpan(first_row, 0, len(group_rows), 1)
 
         table_header = self.table.horizontalHeader()
         table_header.setFixedHeight(self.HEADER_HEIGHT)

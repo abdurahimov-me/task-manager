@@ -23,12 +23,25 @@ try:
     db.add_employee("__SMOKE__", "__SMOKE__", department_id, [project_id])
     db.add_employee("__OTHER__", "__OTHER__", other_department_id, [project_id])
     db.add_work_type("__SMOKE_TYPE__")
+    db.add_work_type("__SECOND_TYPE__")
     employee_id = db.connection.execute(
         "SELECT id FROM employees WHERE first_name='__SMOKE__'"
     ).fetchone()[0]
     work_type_id = db.connection.execute(
         "SELECT id FROM work_types WHERE name='__SMOKE_TYPE__'"
     ).fetchone()[0]
+    second_type_id = db.connection.execute(
+        "SELECT id FROM work_types WHERE name='__SECOND_TYPE__'"
+    ).fetchone()[0]
+    assert [row["id"] for row in db.all("work_types", False)] == [
+        work_type_id,
+        second_type_id,
+    ]
+    assert db.move_work_type(second_type_id, -1) is True
+    assert [row["id"] for row in db.all("work_types", False)] == [
+        second_type_id,
+        work_type_id,
+    ]
     other_employee_id = db.connection.execute(
         "SELECT id FROM employees WHERE first_name='__OTHER__'"
     ).fetchone()[0]
