@@ -378,6 +378,58 @@ class Database:
             ON CONFLICT(employee_id,project_id,work_type_id,work_date) DO UPDATE SET quantity=excluded.quantity,updated_at=CURRENT_TIMESTAMP""", (employee_id,project_id,type_id,work_date,quantity))
         self.connection.commit()
 
+    def period_matrix(self, date_from, date_to, department_id=None, project_id=None):
+        """Return an aggregated daily-style matrix for a reporting period."""
+        filters = (date_from, date_to, department_id, department_id, project_id, project_id)
+        assignments = self.connection.execute(
+            """
+            SELECT e.id AS employee_id,e.first_name,e.last_name,
+                   p.id AS project_id,p.name AS project_name,SUM(d.quantity) AS total
+            FROM daily_entries AS d
+            JOIN employees AS e ON e.id=d.employee_id
+            JOIN projects AS p ON p.id=d.project_id
+            WHERE d.work_date BETWEEN ? AND ?
+              AND (? IS NULL OR e.department_id=?)
+              AND (? IS NULL OR d.project_id=?)
+            GROUP BY e.id,e.first_name,e.last_name,p.id,p.name
+            HAVING SUM(d.quantity)>0
+            ORDER BY e.last_name,e.first_name,p.name
+            """,
+            filters,
+        ).fetchall()
+        types = self.connection.execute(
+            """
+            SELECT w.id,w.name,w.sort_order
+            FROM daily_entries AS d
+            JOIN employees AS e ON e.id=d.employee_id
+            JOIN work_types AS w ON w.id=d.work_type_id
+            WHERE d.work_date BETWEEN ? AND ?
+              AND (? IS NULL OR e.department_id=?)
+              AND (? IS NULL OR d.project_id=?)
+            GROUP BY w.id,w.name,w.sort_order
+            HAVING SUM(d.quantity)>0
+            ORDER BY w.sort_order,w.id
+            """,
+            filters,
+        ).fetchall()
+        rows = self.connection.execute(
+            """
+            SELECT d.employee_id,d.project_id,d.work_type_id,SUM(d.quantity) AS quantity
+            FROM daily_entries AS d
+            JOIN employees AS e ON e.id=d.employee_id
+            WHERE d.work_date BETWEEN ? AND ?
+              AND (? IS NULL OR e.department_id=?)
+              AND (? IS NULL OR d.project_id=?)
+            GROUP BY d.employee_id,d.project_id,d.work_type_id
+            """,
+            filters,
+        ).fetchall()
+        values = {
+            (row["employee_id"], row["project_id"], row["work_type_id"]): int(row["quantity"])
+            for row in rows
+        }
+        return assignments, types, values
+
     def employee_totals(self, date_from, date_to, department_id=None, project_id=None):
         return self.connection.execute(
             """

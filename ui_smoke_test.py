@@ -1,4 +1,5 @@
 import os
+from zipfile import ZipFile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,7 +12,9 @@ from PySide6.QtWidgets import QApplication
 
 
 test_database = Path(__file__).resolve().parent / "data" / "ui_smoke_test.db"
+test_report = Path(__file__).resolve().parent / "data" / "ui_smoke_report.xlsx"
 test_database.unlink(missing_ok=True)
+test_report.unlink(missing_ok=True)
 app = QApplication([])
 
 with patch("main.Database", side_effect=lambda: database.Database(test_database)):
@@ -163,8 +166,20 @@ try:
     assert window.statistics.employee_metric.value.text() == "31"
     assert window.statistics.employee_chart.height() >= 85 + 31 * 36
     assert window.statistics.employee_chart_page.verticalScrollBar().maximum() > 0
+    with (
+        patch("main.QFileDialog.getSaveFileName", return_value=(str(test_report), "")),
+        patch("main.QMessageBox.information"),
+    ):
+        window.statistics.export_report()
+    assert test_report.exists()
+    with ZipFile(test_report) as report:
+        assert report.testzip() is None
+        sheet = report.read("xl/worksheets/sheet1.xml")
+        assert b"Valiyev Ali" in sheet
+        assert long_work_type.upper().encode("utf-8") in sheet
     print("UI_SMOKE_OK")
 finally:
     window.close()
     db.connection.close()
     test_database.unlink(missing_ok=True)
+    test_report.unlink(missing_ok=True)

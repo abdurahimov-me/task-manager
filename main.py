@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
     QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -43,6 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from database import Database
+from excel_report import write_period_report
 
 
 STYLE = """
@@ -1678,6 +1680,11 @@ class StatisticsPage(QWidget):
 
         show_button = button("Natijani ko‘rsatish", "primary", self.load)
         selection_filter_layout.addWidget(show_button, 0, Qt.AlignBottom)
+        export_button = button("Excelga yuklash", "secondary", self.export_report)
+        export_button.setToolTip(
+            "Tanlangan davr hisobotini kunlik jadval ko‘rinishida saqlash"
+        )
+        selection_filter_layout.addWidget(export_button, 0, Qt.AlignBottom)
         filter_root.addLayout(selection_filter_layout)
         root.addWidget(filters)
 
@@ -1799,6 +1806,98 @@ class StatisticsPage(QWidget):
     def date_filter_changed(self, *_):
         if self.date_from.date() <= self.date_to.date():
             self.load()
+
+    def export_report(self):
+        if self.date_from.date() > self.date_to.date():
+            QMessageBox.information(
+                self,
+                "Sana oralig‘ini tekshiring",
+                "Boshlanish sanasi tugash sanasidan keyin bo‘lishi mumkin emas.",
+            )
+            return
+        date_from = self.date_from.date().toString("yyyy-MM-dd")
+        date_to = self.date_to.date().toString("yyyy-MM-dd")
+        assignments, work_types, values = self.db.period_matrix(
+            date_from, date_to, self.selected_department_id, self.selected_project_id
+        )
+        if self.selected_work_type_id is not None:
+            work_types = [
+                work_type
+                for work_type in work_types
+                if work_type["id"] == self.selected_work_type_id
+            ]
+            assignments = [
+                assignment
+                for assignment in assignments
+                if any(
+                    values.get(
+                        (
+                            assignment["employee_id"],
+                            assignment["project_id"],
+                            work_type["id"],
+                        ),
+                        0,
+                    )
+                    for work_type in work_types
+                )
+            ]
+        if not assignments or not work_types:
+            QMessageBox.information(
+                self,
+                "Ma’lumot topilmadi",
+                "Tanlangan davr va filtrlar bo‘yicha hisobot mavjud emas.",
+            )
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Hisobotni saqlash",
+            f"hisobot_{date_from}_{date_to}.xlsx",
+            "Excel fayli (*.xlsx)",
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".xlsx"):
+            file_path += ".xlsx"
+
+        headers = ["XODIM", "LOYIHA"] + [row["name"].upper() for row in work_types] + ["JAMI"]
+        report_rows = []
+        for assignment in assignments:
+            quantities = [
+                values.get(
+                    (assignment["employee_id"], assignment["project_id"], work_type["id"]),
+                    0,
+                )
+                for work_type in work_types
+            ]
+            report_rows.append(
+                [
+                    f'{assignment["last_name"]} {assignment["first_name"]}',
+                    assignment["project_name"],
+                    *quantities,
+                    sum(quantities),
+                ]
+            )
+        metadata = (
+            f"Davr: {self.date_from.date().toString('dd.MM.yyyy')} — "
+            f"{self.date_to.date().toString('dd.MM.yyyy')}   |   "
+            f"Bo‘lim: {self.department_combo.currentText()}   |   "
+            f"Loyiha: {self.project_combo.currentText()}"
+        )
+        try:
+            write_period_report(
+                file_path,
+                "Bajarilgan ishlar hisoboti",
+                metadata,
+                headers,
+                report_rows,
+            )
+        except OSError as error:
+            QMessageBox.critical(
+                self, "Saqlashda xatolik", f"Faylni saqlab bo‘lmadi:\n{error}"
+            )
+            return
+        QMessageBox.information(self, "Tayyor", f"Hisobot saqlandi:\n{file_path}")
 
     def load(self):
         if self.date_from.date() > self.date_to.date():

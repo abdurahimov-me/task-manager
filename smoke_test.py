@@ -50,6 +50,17 @@ try:
     assert db.daily_matrix("2099-01-01", department_id)[2] == {
         (employee_id, project_id, work_type_id): 3
     }
+    period_assignments, period_types, period_values = db.period_matrix(
+        "2099-01-01", "2099-01-31", department_id
+    )
+    assert [(row["employee_id"], row["project_id"]) for row in period_assignments] == [
+        (employee_id, project_id)
+    ]
+    assert [row["id"] for row in period_types] == [work_type_id]
+    assert period_values == {(employee_id, project_id, work_type_id): 3}
+    all_assignments, _, all_values = db.period_matrix("2099-01-01", "2099-01-31")
+    assert len(all_assignments) == 2
+    assert sum(all_values.values()) == 10
     assert db.daily_matrix("2099-01-01", 0)[0] == []
     totals = db.employee_totals("2099-01-01", "2099-01-31", department_id)
     assert [(row["id"], row["total"]) for row in totals] == [(employee_id, 3)]
