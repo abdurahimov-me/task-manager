@@ -59,8 +59,8 @@ def write_period_report(path, title, metadata, headers, rows):
 <dimension ref="A1:{last_column}{last_row}"/>
 <sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
 <cols>{''.join(columns)}</cols><sheetData>{''.join(sheet_rows)}</sheetData>
-<mergeCells count="2"><mergeCell ref="A1:{last_column}1"/><mergeCell ref="A2:{last_column}2"/></mergeCells>
 <autoFilter ref="A4:{last_column}{last_row}"/>
+<mergeCells count="2"><mergeCell ref="A1:{last_column}1"/><mergeCell ref="A2:{last_column}2"/></mergeCells>
 <pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
 <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/>
 </worksheet>'''
