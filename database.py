@@ -383,19 +383,48 @@ class Database:
         filters = (date_from, date_to, department_id, department_id, project_id, project_id)
         assignments = self.connection.execute(
             """
+            WITH report_assignments AS (
+                SELECT pe.employee_id,pe.project_id
+                FROM project_employees AS pe
+                JOIN projects AS assigned_project ON assigned_project.id=pe.project_id
+                WHERE assigned_project.start_date<=?
+                  AND (assigned_project.completed_at IS NULL
+                       OR assigned_project.completed_at>=?)
+
+                UNION
+
+                SELECT d.employee_id,d.project_id
+                FROM daily_entries AS d
+                WHERE d.work_date BETWEEN ? AND ?
+            )
             SELECT e.id AS employee_id,e.first_name,e.last_name,
-                   p.id AS project_id,p.name AS project_name,SUM(d.quantity) AS total
-            FROM daily_entries AS d
-            JOIN employees AS e ON e.id=d.employee_id
-            JOIN projects AS p ON p.id=d.project_id
-            WHERE d.work_date BETWEEN ? AND ?
+                   p.id AS project_id,p.name AS project_name,
+                   COALESCE(SUM(d.quantity),0) AS total
+            FROM report_assignments AS assignment
+            JOIN employees AS e ON e.id=assignment.employee_id
+            JOIN projects AS p ON p.id=assignment.project_id
+            LEFT JOIN daily_entries AS d
+              ON d.employee_id=assignment.employee_id
+             AND d.project_id=assignment.project_id
+             AND d.work_date BETWEEN ? AND ?
+            WHERE 1=1
               AND (? IS NULL OR e.department_id=?)
-              AND (? IS NULL OR d.project_id=?)
+              AND (? IS NULL OR p.id=?)
             GROUP BY e.id,e.first_name,e.last_name,p.id,p.name
-            HAVING SUM(d.quantity)>0
             ORDER BY e.last_name,e.first_name,p.name
             """,
-            filters,
+            (
+                date_to,
+                date_from,
+                date_from,
+                date_to,
+                date_from,
+                date_to,
+                department_id,
+                department_id,
+                project_id,
+                project_id,
+            ),
         ).fetchall()
         types = self.connection.execute(
             """

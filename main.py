@@ -1826,21 +1826,6 @@ class StatisticsPage(QWidget):
                 for work_type in work_types
                 if work_type["id"] == self.selected_work_type_id
             ]
-            assignments = [
-                assignment
-                for assignment in assignments
-                if any(
-                    values.get(
-                        (
-                            assignment["employee_id"],
-                            assignment["project_id"],
-                            work_type["id"],
-                        ),
-                        0,
-                    )
-                    for work_type in work_types
-                )
-            ]
         if not assignments or not work_types:
             QMessageBox.information(
                 self,

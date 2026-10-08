@@ -20,7 +20,13 @@ try:
     project_id = db.connection.execute(
         "SELECT id FROM projects WHERE name='__SMOKE_PROJECT__'"
     ).fetchone()[0]
-    db.add_employee("__SMOKE__", "__SMOKE__", department_id, [project_id])
+    db.add_project("__ZERO_PROJECT__", "2090-01-01")
+    zero_project_id = db.connection.execute(
+        "SELECT id FROM projects WHERE name='__ZERO_PROJECT__'"
+    ).fetchone()[0]
+    db.add_employee(
+        "__SMOKE__", "__SMOKE__", department_id, [project_id, zero_project_id]
+    )
     db.add_employee("__OTHER__", "__OTHER__", other_department_id, [project_id])
     db.add_work_type("__SMOKE_TYPE__")
     db.add_work_type("__SECOND_TYPE__")
@@ -53,13 +59,17 @@ try:
     period_assignments, period_types, period_values = db.period_matrix(
         "2099-01-01", "2099-01-31", department_id
     )
-    assert [(row["employee_id"], row["project_id"]) for row in period_assignments] == [
-        (employee_id, project_id)
-    ]
+    assert {
+        (row["employee_id"], row["project_id"], row["total"])
+        for row in period_assignments
+    } == {
+        (employee_id, project_id, 3),
+        (employee_id, zero_project_id, 0),
+    }
     assert [row["id"] for row in period_types] == [work_type_id]
     assert period_values == {(employee_id, project_id, work_type_id): 3}
     all_assignments, _, all_values = db.period_matrix("2099-01-01", "2099-01-31")
-    assert len(all_assignments) == 2
+    assert len(all_assignments) == 3
     assert sum(all_values.values()) == 10
     assert db.daily_matrix("2099-01-01", 0)[0] == []
     totals = db.employee_totals("2099-01-01", "2099-01-31", department_id)
@@ -94,6 +104,7 @@ try:
     assert db.delete_if_unused("departments", department_id) is False
     assert db.delete_if_unused("work_types", work_type_id) is False
     db.complete_project(project_id, "2099-01-01")
+    db.complete_project(zero_project_id, "2099-01-01")
     assert db.daily_matrix("2099-01-01", department_id)[0]
     assert db.daily_matrix("2099-01-02", department_id)[0] == []
     assert db.all("projects", False) == []
