@@ -153,7 +153,7 @@ try:
     assert window.sidebar.width() == 76
     assert all(button.text() == icon for button, (icon, _) in zip(window.buttons, window.nav_items))
     window.toggle_sidebar()
-    assert window.sidebar.width() == 238
+    assert window.sidebar.width() == 228
 
     window.statistics.load()
     assert window.statistics.project_combo.findData(project_id) >= 0

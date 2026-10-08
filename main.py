@@ -49,21 +49,22 @@ from excel_report import write_period_report
 
 STYLE = """
 * {
-    font-family: 'Segoe UI';
+    font-family: 'Segoe UI Variable Text', 'Segoe UI';
     font-size: 13px;
-    color: #344054;
+    color: #334155;
 }
 QMainWindow, QWidget#root, QWidget#page {
-    background: #f6f7fb;
+    background: #f7f8fc;
 }
 QFrame#sidebar {
-    background: #101828;
+    background: #ffffff;
     border: 0;
+    border-right: 1px solid #e8eaf0;
 }
 QFrame#logoMark {
-    background: #2f6fed;
+    background: #4f46e5;
     border: 0;
-    border-radius: 11px;
+    border-radius: 12px;
 }
 QLabel#logoText {
     color: #ffffff;
@@ -71,33 +72,33 @@ QLabel#logoText {
     font-weight: 800;
 }
 QLabel#brand {
-    color: #ffffff;
-    font-size: 17px;
-    font-weight: 700;
+    color: #172033;
+    font-size: 18px;
+    font-weight: 650;
 }
 QLabel#brandSub, QLabel#navSection {
-    color: #667085;
+    color: #a0a7b5;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 650;
 }
 QPushButton#nav {
     background: transparent;
-    color: #98a2b3;
+    color: #64748b;
     text-align: left;
     border: 0;
-    border-radius: 9px;
-    padding: 11px 14px;
+    border-radius: 11px;
+    padding: 11px 13px;
     font-size: 14px;
     font-weight: 500;
 }
 QPushButton#nav:hover {
-    background: #1d2939;
-    color: #eaecf0;
+    background: #f5f5ff;
+    color: #4338ca;
 }
 QPushButton#nav[active="true"] {
-    background: #243b64;
-    color: #ffffff;
-    font-weight: 650;
+    background: #eeedff;
+    color: #4338ca;
+    font-weight: 600;
 }
 QPushButton#nav[collapsed="true"] {
     text-align: center;
@@ -105,57 +106,58 @@ QPushButton#nav[collapsed="true"] {
     font-size: 19px;
 }
 QPushButton#sidebarToggle {
-    background: #1d2939;
-    color: #98a2b3;
-    border: 0;
-    border-radius: 8px;
+    background: #f8fafc;
+    color: #94a3b8;
+    border: 1px solid #e8eaf0;
+    border-radius: 9px;
     padding: 0;
     font-size: 20px;
     font-weight: 700;
 }
 QPushButton#sidebarToggle:hover {
-    background: #243b64;
-    color: #ffffff;
+    background: #eeedff;
+    color: #4338ca;
+    border-color: #d9d6fe;
 }
 QFrame#sidebarLine {
-    background: #1d2939;
+    background: #eef0f4;
     border: 0;
     min-height: 1px;
     max-height: 1px;
 }
 QLabel#sidebarFoot {
-    color: #667085;
+    color: #a0a7b5;
     font-size: 11px;
 }
 QLabel#title {
-    color: #101828;
-    font-size: 26px;
-    font-weight: 700;
+    color: #172033;
+    font-size: 28px;
+    font-weight: 650;
 }
 QLabel#subtitle, QLabel#muted {
-    color: #667085;
+    color: #7c879b;
 }
 QLabel#sectionTitle {
-    color: #1d2939;
-    font-size: 15px;
-    font-weight: 650;
+    color: #273247;
+    font-size: 16px;
+    font-weight: 600;
 }
 QLabel#sectionMeta {
     color: #98a2b3;
     font-size: 12px;
 }
 QLabel#selectionChip {
-    background: #eef4ff;
-    color: #2f6fed;
-    border: 1px solid #dbe5ff;
-    border-radius: 8px;
+    background: #f2f1ff;
+    color: #4f46e5;
+    border: 1px solid #dedbff;
+    border-radius: 9px;
     padding: 6px 10px;
     font-size: 11px;
     font-weight: 700;
 }
 QLabel#emptyMark {
-    background: #eef4ff;
-    color: #2f6fed;
+    background: #f2f1ff;
+    color: #4f46e5;
     border-radius: 22px;
     font-size: 20px;
     font-weight: 700;
@@ -171,12 +173,12 @@ QLabel#emptyText {
 }
 QFrame#surface, QFrame#metric {
     background: #ffffff;
-    border: 1px solid #e4e7ec;
-    border-radius: 12px;
+    border: 1px solid #e7e9ef;
+    border-radius: 15px;
 }
 QFrame#metric[accent="true"] {
-    background: #f4f7ff;
-    border: 1px solid #dbe5ff;
+    background: #f3f2ff;
+    border: 1px solid #dedbff;
 }
 QLabel#metricLabel {
     color: #667085;
@@ -184,27 +186,29 @@ QLabel#metricLabel {
     font-weight: 500;
 }
 QLabel#metricValue {
-    color: #101828;
-    font-size: 23px;
-    font-weight: 700;
+    color: #172033;
+    font-size: 25px;
+    font-weight: 650;
 }
 QLabel#metricValue[accent="true"] {
-    color: #2f6fed;
+    color: #4f46e5;
 }
 QLineEdit, QDateEdit, QComboBox {
-    background: #ffffff;
-    color: #1d2939;
-    border: 1px solid #d0d5dd;
-    border-radius: 8px;
-    padding: 8px 11px;
+    background: #fafbfc;
+    color: #273247;
+    border: 1px solid #dfe3ea;
+    border-radius: 10px;
+    padding: 8px 12px;
     selection-background-color: #dbe7ff;
     min-height: 22px;
 }
 QLineEdit:hover, QDateEdit:hover, QComboBox:hover {
-    border-color: #98a2b3;
+    background: #ffffff;
+    border-color: #b8c0ce;
 }
 QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
-    border: 1px solid #2f6fed;
+    background: #ffffff;
+    border: 1px solid #6366f1;
 }
 QDateEdit::drop-down {
     width: 24px;
@@ -257,29 +261,29 @@ QCheckBox::indicator:checked {
 }
 QPushButton {
     border: 0;
-    border-radius: 8px;
-    padding: 9px 15px;
+    border-radius: 10px;
+    padding: 9px 16px;
     min-height: 20px;
     font-weight: 600;
 }
 QPushButton#primary {
-    background: #2f6fed;
+    background: #4f46e5;
     color: #ffffff;
 }
 QPushButton#primary:hover {
-    background: #255dcc;
+    background: #4338ca;
 }
 QPushButton#primary:pressed {
-    background: #1f4fab;
+    background: #3730a3;
 }
 QPushButton#secondary {
     background: #ffffff;
-    color: #344054;
-    border: 1px solid #d0d5dd;
+    color: #475569;
+    border: 1px solid #dfe3ea;
 }
 QPushButton#secondary:hover {
-    background: #f9fafb;
-    border-color: #98a2b3;
+    background: #f8fafc;
+    border-color: #b8c0ce;
 }
 QPushButton#quiet {
     background: #f2f4f7;
@@ -309,11 +313,11 @@ QPushButton#dateNav:hover {
 }
 QTableWidget {
     background: #ffffff;
-    alternate-background-color: #fcfcfd;
+    alternate-background-color: #fafbfc;
     border: 0;
     outline: 0;
-    gridline-color: #eaecf0;
-    selection-background-color: #eef4ff;
+    gridline-color: #eef0f4;
+    selection-background-color: #f0efff;
     selection-color: #1d2939;
 }
 QTableWidget::item {
@@ -344,8 +348,8 @@ QHeaderView {
     background: #f9fafb;
 }
 QHeaderView::section {
-    background: #f9fafb;
-    color: #667085;
+    background: #fafbfc;
+    color: #7c879b;
     border: 0;
     border-bottom: 1px solid #eaecf0;
     padding: 11px 12px;
@@ -354,24 +358,38 @@ QHeaderView::section {
 }
 QTabBar#departmentTabs {
     background: #ffffff;
-    border-bottom: 1px solid #eaecf0;
+    border: 0;
+    border-bottom: 1px solid #eef0f4;
+    padding: 10px 14px;
 }
 QTabBar#departmentTabs::tab {
-    background: #ffffff;
-    color: #667085;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    padding: 11px 18px;
-    min-width: 90px;
-    font-weight: 600;
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    margin-right: 7px;
+    padding: 8px 16px;
+    min-width: 82px;
+    min-height: 18px;
+    font-weight: 550;
 }
 QTabBar#departmentTabs::tab:hover {
-    color: #2f6fed;
-    background: #f9fafb;
+    color: #4f46e5;
+    background: #ffffff;
+    border-color: #c7c3ff;
 }
 QTabBar#departmentTabs::tab:selected {
-    color: #2f6fed;
-    border-bottom-color: #2f6fed;
+    color: #4f46e5;
+    background: #eeedff;
+    border-color: #c7c3ff;
+    font-weight: 650;
+}
+QTabBar#departmentTabs QToolButton {
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin: 2px;
 }
 QScrollBar:vertical {
     background: transparent;
@@ -624,8 +642,8 @@ class MetricCard(QFrame):
         self.setObjectName("metric")
         self.setProperty("accent", accent)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(3)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(5)
 
         caption = QLabel(label)
         caption.setObjectName("metricLabel")
@@ -647,7 +665,7 @@ class EmptyState(QWidget):
         layout.setSpacing(7)
         layout.setAlignment(Qt.AlignCenter)
 
-        mark = QLabel("+")
+        mark = QLabel("·")
         mark.setObjectName("emptyMark")
         mark.setFixedSize(44, 44)
         mark.setAlignment(Qt.AlignCenter)
@@ -2337,7 +2355,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.db = Database()
         self.setWindowTitle("HR Control")
-        self.resize(1220, 760)
+        self.resize(1280, 800)
         self.setMinimumSize(960, 620)
 
         root = QWidget()
@@ -2350,10 +2368,10 @@ class MainWindow(QMainWindow):
         self.sidebar_collapsed = False
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(238)
+        self.sidebar.setFixedWidth(228)
         self.nav_layout = QVBoxLayout(self.sidebar)
-        self.nav_layout.setContentsMargins(18, 22, 18, 18)
-        self.nav_layout.setSpacing(7)
+        self.nav_layout.setContentsMargins(16, 22, 16, 18)
+        self.nav_layout.setSpacing(8)
 
         identity = QHBoxLayout()
         identity.setSpacing(11)
@@ -2383,7 +2401,7 @@ class MainWindow(QMainWindow):
         self.sidebar_toggle.setToolTip("Yon menyuni yopish")
         identity.addWidget(self.sidebar_toggle, 0, Qt.AlignVCenter)
         self.nav_layout.addLayout(identity)
-        self.nav_layout.addSpacing(27)
+        self.nav_layout.addSpacing(29)
 
         self.nav_section = QLabel("ASOSIY MENYU")
         self.nav_section.setObjectName("navSection")
@@ -2448,8 +2466,8 @@ class MainWindow(QMainWindow):
 
     def toggle_sidebar(self):
         self.sidebar_collapsed = not self.sidebar_collapsed
-        self.sidebar.setFixedWidth(76 if self.sidebar_collapsed else 238)
-        margins = (10, 22, 10, 18) if self.sidebar_collapsed else (18, 22, 18, 18)
+        self.sidebar.setFixedWidth(76 if self.sidebar_collapsed else 228)
+        margins = (10, 22, 10, 18) if self.sidebar_collapsed else (16, 22, 16, 18)
         self.nav_layout.setContentsMargins(*margins)
         for widget in (
             self.logo,
@@ -2494,7 +2512,7 @@ if __name__ == "__main__":
             pass
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    app.setFont(QFont("Segoe UI", 10))
+    app.setFont(QFont("Segoe UI Variable Text", 10))
     app.setStyleSheet(STYLE)
     app_icon = QIcon(str(resource_path("assets/hr-control-app-icon.png")))
     app.setWindowIcon(app_icon)
