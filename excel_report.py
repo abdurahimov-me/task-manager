@@ -4,55 +4,6 @@ from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
-def uzbek_cyrillic(value):
-    """Transliterate Uzbek Latin text for Cyrillic report headings."""
-    text = str(value)
-    for apostrophe in ("‘", "’", "ʻ", "ʼ", "`", "´"):
-        text = text.replace(apostrophe, "'")
-
-    combinations = {
-        "o'": "ў",
-        "g'": "ғ",
-        "sh": "ш",
-        "ch": "ч",
-        "yo": "ё",
-        "yu": "ю",
-        "ya": "я",
-        "ye": "е",
-        "ts": "ц",
-    }
-    letters = {
-        "a": "а", "b": "б", "c": "с", "d": "д", "e": "е",
-        "f": "ф", "g": "г", "h": "ҳ", "i": "и", "j": "ж",
-        "k": "к", "l": "л", "m": "м", "n": "н", "o": "о",
-        "p": "п", "q": "қ", "r": "р", "s": "с", "t": "т",
-        "u": "у", "v": "в", "w": "в", "x": "х", "y": "й",
-        "z": "з", "'": "ъ",
-    }
-
-    def match_case(source, replacement):
-        if source.isupper():
-            return replacement.upper()
-        if source[:1].isupper():
-            return replacement[:1].upper() + replacement[1:]
-        return replacement
-
-    result = []
-    index = 0
-    while index < len(text):
-        pair = text[index:index + 2]
-        replacement = combinations.get(pair.lower())
-        if replacement is not None:
-            result.append(match_case(pair, replacement))
-            index += 2
-            continue
-        character = text[index]
-        replacement = letters.get(character.lower())
-        result.append(match_case(character, replacement) if replacement else character)
-        index += 1
-    return "".join(result)
-
-
 def _column_name(index):
     name = ""
     while index:

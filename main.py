@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from database import Database
-from excel_report import uzbek_cyrillic, write_period_report
+from excel_report import write_period_report
 
 
 STYLE = """
@@ -1864,7 +1864,7 @@ class StatisticsPage(QWidget):
             file_path += ".xlsx"
 
         headers = ["ХОДИМ", "ЛОЙИҲА"] + [
-            uzbek_cyrillic(row["name"]).upper() for row in work_types
+            row["name"].upper() for row in work_types
         ] + ["ЖАМИ"]
         report_rows = []
         for assignment in assignments:
