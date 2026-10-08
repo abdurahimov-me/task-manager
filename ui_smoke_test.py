@@ -176,7 +176,12 @@ try:
         assert report.testzip() is None
         sheet = report.read("xl/worksheets/sheet1.xml")
         assert b"Valiyev Ali" in sheet
-        assert long_work_type.upper().encode("utf-8") in sheet
+        assert "ХОДИМ".encode("utf-8") in sheet
+        assert "ЛОЙИҲА".encode("utf-8") in sheet
+        assert "ЖУДА УЗУН НОМЛИ ИШ ТУРИ ҲИСОБОТИ".encode("utf-8") in sheet
+        assert "ЖАМИ".encode("utf-8") in sheet
+        workbook = report.read("xl/workbook.xml")
+        assert "Ҳисобот".encode("utf-8") in workbook
     print("UI_SMOKE_OK")
 finally:
     window.close()

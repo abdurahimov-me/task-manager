@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from database import Database
-from excel_report import write_period_report
+from excel_report import uzbek_cyrillic, write_period_report
 
 
 STYLE = """
@@ -1863,7 +1863,9 @@ class StatisticsPage(QWidget):
         if not file_path.lower().endswith(".xlsx"):
             file_path += ".xlsx"
 
-        headers = ["XODIM", "LOYIHA"] + [row["name"].upper() for row in work_types] + ["JAMI"]
+        headers = ["ХОДИМ", "ЛОЙИҲА"] + [
+            uzbek_cyrillic(row["name"]).upper() for row in work_types
+        ] + ["ЖАМИ"]
         report_rows = []
         for assignment in assignments:
             quantities = [
@@ -1882,15 +1884,15 @@ class StatisticsPage(QWidget):
                 ]
             )
         metadata = (
-            f"Davr: {self.date_from.date().toString('dd.MM.yyyy')} — "
+            f"Давр: {self.date_from.date().toString('dd.MM.yyyy')} — "
             f"{self.date_to.date().toString('dd.MM.yyyy')}   |   "
-            f"Bo‘lim: {self.department_combo.currentText()}   |   "
-            f"Loyiha: {self.project_combo.currentText()}"
+            f"Бўлим: {self.department_combo.currentText()}   |   "
+            f"Лойиҳа: {self.project_combo.currentText()}"
         )
         try:
             write_period_report(
                 file_path,
-                "Bajarilgan ishlar hisoboti",
+                "Бажарилган ишлар ҳисоботи",
                 metadata,
                 headers,
                 report_rows,

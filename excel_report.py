@@ -4,6 +4,55 @@ from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
+def uzbek_cyrillic(value):
+    """Transliterate Uzbek Latin text for Cyrillic report headings."""
+    text = str(value)
+    for apostrophe in ("‘", "’", "ʻ", "ʼ", "`", "´"):
+        text = text.replace(apostrophe, "'")
+
+    combinations = {
+        "o'": "ў",
+        "g'": "ғ",
+        "sh": "ш",
+        "ch": "ч",
+        "yo": "ё",
+        "yu": "ю",
+        "ya": "я",
+        "ye": "е",
+        "ts": "ц",
+    }
+    letters = {
+        "a": "а", "b": "б", "c": "с", "d": "д", "e": "е",
+        "f": "ф", "g": "г", "h": "ҳ", "i": "и", "j": "ж",
+        "k": "к", "l": "л", "m": "м", "n": "н", "o": "о",
+        "p": "п", "q": "қ", "r": "р", "s": "с", "t": "т",
+        "u": "у", "v": "в", "w": "в", "x": "х", "y": "й",
+        "z": "з", "'": "ъ",
+    }
+
+    def match_case(source, replacement):
+        if source.isupper():
+            return replacement.upper()
+        if source[:1].isupper():
+            return replacement[:1].upper() + replacement[1:]
+        return replacement
+
+    result = []
+    index = 0
+    while index < len(text):
+        pair = text[index:index + 2]
+        replacement = combinations.get(pair.lower())
+        if replacement is not None:
+            result.append(match_case(pair, replacement))
+            index += 2
+            continue
+        character = text[index]
+        replacement = letters.get(character.lower())
+        result.append(match_case(character, replacement) if replacement else character)
+        index += 1
+    return "".join(result)
+
+
 def _column_name(index):
     name = ""
     while index:
@@ -73,7 +122,7 @@ def write_period_report(path, title, metadata, headers, rows):
 <cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>'''
-    workbook = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Hisobot" sheetId="1" r:id="rId1"/></sheets></workbook>'''
+    workbook = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Ҳисобот" sheetId="1" r:id="rId1"/></sheets></workbook>'''
     content_types = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>'''
     package_rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'''
     workbook_rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'''
