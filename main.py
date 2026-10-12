@@ -3,17 +3,24 @@ import sys
 from pathlib import Path
 from textwrap import wrap
 
-from PySide6.QtCharts import (
-    QAbstractBarSeries,
-    QBarCategoryAxis,
-    QBarSet,
-    QChart,
-    QChartView,
-    QDateTimeAxis,
-    QHorizontalBarSeries,
-    QLineSeries,
-    QValueAxis,
-)
+try:
+    from PySide6.QtCharts import (
+        QAbstractBarSeries,
+        QBarCategoryAxis,
+        QBarSet,
+        QChart,
+        QChartView,
+        QDateTimeAxis,
+        QHorizontalBarSeries,
+        QLineSeries,
+        QValueAxis,
+    )
+
+    CHARTS_AVAILABLE = True
+    CHARTS_IMPORT_ERROR = ""
+except (ImportError, OSError) as error:
+    CHARTS_AVAILABLE = False
+    CHARTS_IMPORT_ERROR = str(error)
 from PySide6.QtCore import QDate, QDateTime, QEvent, QLocale, QMargins, QTime, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -170,6 +177,14 @@ QLabel#emptyTitle {
 QLabel#emptyText {
     color: #98a2b3;
     font-size: 12px;
+}
+QLabel#chartFallback {
+    background: #fafbfc;
+    color: #7c879b;
+    border: 1px dashed #d8dce5;
+    border-radius: 12px;
+    padding: 24px;
+    font-size: 13px;
 }
 QFrame#surface, QFrame#metric {
     background: #ffffff;
@@ -1754,7 +1769,8 @@ class StatisticsPage(QWidget):
         )
         root.addWidget(daily_card, 1)
         for view in (self.employee_chart, self.daily_chart):
-            view.viewport().installEventFilter(self)
+            event_target = view.viewport() if hasattr(view, "viewport") else view
+            event_target.installEventFilter(self)
         self.load()
 
     @staticmethod
@@ -1797,13 +1813,22 @@ class StatisticsPage(QWidget):
 
         stack = QStackedWidget()
         stack.setMinimumHeight(160)
-        chart_view = QChartView()
-        chart_view.setRenderHint(QPainter.Antialiasing)
+        if CHARTS_AVAILABLE:
+            chart_view = QChartView()
+            chart_view.setRenderHint(QPainter.Antialiasing)
+            chart_view.setStyleSheet("background: transparent; border: 0;")
+        else:
+            chart_view = QLabel(
+                "Diagrammani yuklab bo‘lmadi.\n"
+                "Qolgan funksiyalar va Excel hisoboti ishlashda davom etadi."
+            )
+            chart_view.setObjectName("chartFallback")
+            chart_view.setAlignment(Qt.AlignCenter)
+            chart_view.setWordWrap(True)
         chart_view.setMouseTracking(True)
-        chart_view.setStyleSheet("background: transparent; border: 0;")
         chart_view.setMinimumHeight(160)
         chart_page = chart_view
-        if scrollable:
+        if scrollable and CHARTS_AVAILABLE:
             chart_page = QScrollArea()
             chart_page.setFrameShape(QFrame.NoFrame)
             chart_page.setWidgetResizable(False)
@@ -2034,6 +2059,13 @@ class StatisticsPage(QWidget):
         self.total_metric.set_value(sum(row["total"] for row in self.employee_rows))
         self.employee_metric.set_value(len(self.employee_rows))
         self.day_metric.set_value(self.date_from.date().daysTo(self.date_to.date()) + 1)
+
+        if not CHARTS_AVAILABLE:
+            self.selected_employee_id = None
+            self.employee_stack.setCurrentWidget(self.employee_chart_page)
+            self.daily_stack.setCurrentWidget(self.daily_chart_page)
+            self.selection_chip.setText("Grafik mavjud emas")
+            return
 
         if not self.employee_rows:
             self.selected_employee_id = None
