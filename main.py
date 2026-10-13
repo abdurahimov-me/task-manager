@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from database import Database
-from excel_report import write_period_report
+from pdf_report import write_period_pdf
 
 
 STYLE = """
@@ -705,7 +705,7 @@ class EntityDialog(QDialog):
             "employees": "Ходим",
             "work_types": "Иш тури",
             "departments": "Бўлим",
-            "projects": "Лойиҳа",
+            "projects": "Жиноий иш",
         }
         noun = nouns[kind]
         action = "Таҳрирлаш" if row else "Янги қўшиш"
@@ -750,7 +750,7 @@ class EntityDialog(QDialog):
             self.department.setCurrentIndex(max(0, selected_index))
             root.addWidget(department_label)
             root.addWidget(self.department)
-            projects_label = QLabel("Бириктирилган лойиҳалар")
+            projects_label = QLabel("Бириктирилган жиноий ишлар")
             projects_label.setObjectName("fieldLabel")
             root.addWidget(projects_label)
             selected_project_ids = db.employee_project_ids(row["id"]) if row else set()
@@ -784,8 +784,8 @@ class EntityDialog(QDialog):
                     project_layout.addWidget(check)
             else:
                 no_projects = QLabel(
-                    "Фаол лойиҳалар ҳали йўқ.\n"
-                    "Аввал “Лойиҳалар” бўлимидан лойиҳа яратинг."
+                    "Фаол жиноий ишлар ҳали йўқ.\n"
+                    "Аввал “Жиноий ишлар” бўлимидан жиноий иш яратинг."
                 )
                 no_projects.setObjectName("muted")
                 no_projects.setWordWrap(True)
@@ -802,7 +802,7 @@ class EntityDialog(QDialog):
             )
             root.addWidget(project_scroll)
         elif kind == "projects":
-            self.name = self.add_field(root, "Лойиҳа номи *", row["name"] if row else "")
+            self.name = self.add_field(root, "Жиноий иш номи *", row["name"] if row else "")
             start_label = QLabel("Бошланиш санаси *")
             start_label.setObjectName("fieldLabel")
             start_date = QDate.fromString(row["start_date"], Qt.ISODate) if row else QDate.currentDate()
@@ -873,14 +873,14 @@ class EntityDialog(QDialog):
 class ProjectCompletionDialog(QDialog):
     def __init__(self, project, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Лойиҳани якунлаш")
+        self.setWindowTitle("Жиноий ишни якунлаш")
         self.setModal(True)
         self.setMinimumWidth(420)
         root = QVBoxLayout(self)
         root.setContentsMargins(26, 24, 26, 22)
         root.setSpacing(15)
 
-        title = QLabel("Лойиҳани якунлаш")
+        title = QLabel("Жиноий ишни якунлаш")
         title.setObjectName("dialogTitle")
         description = QLabel(
             f'“{project["name"]}” якунлангач, янги кунлик ҳисобда кўринмайди. '
@@ -906,7 +906,7 @@ class ProjectCompletionDialog(QDialog):
         actions = QHBoxLayout()
         actions.addStretch()
         actions.addWidget(button("Бекор қилиш", "secondary", self.reject))
-        actions.addWidget(button("Лойиҳани якунлаш", "primary", self.accept))
+        actions.addWidget(button("Жиноий ишни якунлаш", "primary", self.accept))
         root.addLayout(actions)
 
     def value(self):
@@ -936,7 +936,7 @@ class CrudPage(QWidget):
             "employees": "Ходимлар",
             "work_types": "Иш турлари",
             "departments": "Бўлимлар",
-            "projects": "Лойиҳалар",
+            "projects": "Жиноий ишлар",
         }
         title = QLabel(titles[kind])
         title.setObjectName("title")
@@ -944,7 +944,7 @@ class CrudPage(QWidget):
             "employees": "Жамоа аъзолари, уларнинг бўлими ва ҳолатини бошқаринг",
             "work_types": "Кунлик ҳисобда ишлатиладиган иш турларини бошқаринг",
             "departments": "Ходимларни ажратиш учун ташкилот бўлимларини бошқаринг",
-            "projects": "Лойиҳаларни, уларнинг муддатлари ва ҳолатини бошқаринг",
+            "projects": "Жиноий ишларни, уларнинг муддатлари ва ҳолатини бошқаринг",
         }
         subtitle = QLabel(subtitles[kind])
         subtitle.setObjectName("subtitle")
@@ -956,7 +956,7 @@ class CrudPage(QWidget):
             "employees": "+  Ходим қўшиш",
             "work_types": "+  Иш тури қўшиш",
             "departments": "+  Бўлим қўшиш",
-            "projects": "+  Лойиҳа қўшиш",
+            "projects": "+  Жиноий иш қўшиш",
         }
         add_text = add_texts[kind]
         header.addWidget(button(add_text, "primary", self.add))
@@ -972,7 +972,7 @@ class CrudPage(QWidget):
             "employees": "Ходим ёки бўлимни қидириш...",
             "work_types": "Иш турини қидириш...",
             "departments": "Бўлимни қидириш...",
-            "projects": "Лойиҳа ёки бириктирилган ходимни қидириш...",
+            "projects": "Жиноий иш ёки бириктирилган ходимни қидириш...",
         }
         self.search.setPlaceholderText(placeholders[kind])
         self.search.setClearButtonEnabled(True)
@@ -1042,13 +1042,13 @@ class CrudPage(QWidget):
             "employees": "Ходимлар ҳали йўқ",
             "work_types": "Иш турлари ҳали йўқ",
             "departments": "Бўлимлар ҳали йўқ",
-            "projects": "Лойиҳалар ҳали йўқ",
+            "projects": "Жиноий ишлар ҳали йўқ",
         }
         empty_texts = {
             "employees": "Юқоридаги “Ходим қўшиш” тугмаси орқали биринчи ходимни киритинг.",
             "work_types": "Юқоридаги “Иш тури қўшиш” тугмаси орқали биринчи турни киритинг.",
             "departments": "Юқоридаги “Бўлим қўшиш” тугмаси орқали биринчи бўлимни киритинг.",
-            "projects": "Юқоридаги “Лойиҳа қўшиш” тугмаси орқали биринчи лойиҳани киритинг.",
+            "projects": "Юқоридаги “Жиноий иш қўшиш” тугмаси орқали биринчи жиноий ишни киритинг.",
         }
         empty_title = empty_titles[kind]
         empty_text = empty_texts[kind]
@@ -1095,10 +1095,10 @@ class CrudPage(QWidget):
                 ]
 
         headers = {
-            "employees": ["№", "ХОДИМ", "БЎЛИМ", "ЛОЙИҲАЛАРИ", "ҚЎШИЛГАН САНА", "ҲОЛАТИ"],
+            "employees": ["№", "ХОДИМ", "БЎЛИМ", "ЖИНОИЙ ИШЛАРИ", "ҚЎШИЛГАН САНА", "ҲОЛАТИ"],
             "work_types": ["№", "ИШ ТУРИ", "ҲОЛАТИ"],
             "departments": ["№", "БЎЛИМ", "ҲОЛАТИ"],
-            "projects": ["№", "ЛОЙИҲА", "ХОДИМЛАР", "БОШЛАНГАН", "ЯКУНЛАНГАН", "ҲОЛАТИ"],
+            "projects": ["№", "ЖИНОИЙ ИШ", "ХОДИМЛАР", "БОШЛАНГАН", "ЯКУНЛАНГАН", "ҲОЛАТИ"],
         }[self.kind]
         self.table.clear()
         self.table.setColumnCount(len(headers))
@@ -1275,7 +1275,7 @@ class CrudPage(QWidget):
             "Ўчиришни тасдиқланг",
             f'“{name}” ўчирилсинми?\n\n'
             + (
-                "Агар ҳисоботларда ишлатилган бўлса, лойиҳа якунланганлар рўйхатига ўтказилади."
+                "Агар ҳисоботларда ишлатилган бўлса, жиноий иш якунланганлар рўйхатига ўтказилади."
                 if self.kind == "projects"
                 else "Агар ҳисобларда ишлатилган бўлса, архивга олинади."
             ),
@@ -1289,7 +1289,7 @@ class CrudPage(QWidget):
             "Ёзув бутунлай ўчирилди."
             if deleted
             else (
-                "Тарихий маълумотлар сақланиши учун лойиҳа якунланди."
+                "Тарихий маълумотлар сақланиши учун жиноий иш якунланди."
                 if self.kind == "projects"
                 else "Тарихий маълумотлар сақланиши учун ёзув архивга олинди."
             )
@@ -1347,7 +1347,7 @@ class DailyPage(QWidget):
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
         self.employee_metric = MetricCard("Фаол ходимлар")
-        self.project_metric = MetricCard("Фаол лойиҳалар")
+        self.project_metric = MetricCard("Фаол жиноий ишлар")
         self.total_metric = MetricCard("Кунлик жами", accent=True)
         metrics.addWidget(self.employee_metric)
         metrics.addWidget(self.project_metric)
@@ -1393,7 +1393,7 @@ class DailyPage(QWidget):
         self.employee_table.setObjectName("frozenEmployees")
         configure_table(self.employee_table)
         self.employee_table.setColumnCount(2)
-        self.employee_table.setHorizontalHeaderLabels(["ХОДИМ", "ЛОЙИҲА"])
+        self.employee_table.setHorizontalHeaderLabels(["ХОДИМ", "ЖИНОИЙ ИШ"])
         self.employee_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.employee_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.employee_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -1420,7 +1420,7 @@ class DailyPage(QWidget):
         card_layout.addWidget(self.table_container)
         self.empty_state = EmptyState(
             "Жадвал ҳали тайёр эмас",
-            "Танланган бўлимдаги ходимларга фаол лойиҳа бириктирилганини ва иш тури мавжудлигини текширинг.",
+            "Танланган бўлимдаги ходимларга фаол жиноий иш бириктирилганини ва иш тури мавжудлигини текширинг.",
         )
         card_layout.addWidget(self.empty_state, 1)
         root.addWidget(card, 1)
@@ -1486,7 +1486,7 @@ class DailyPage(QWidget):
         self.employee_table.clearSpans()
         self.employee_table.clear()
         self.employee_table.setColumnCount(2)
-        self.employee_table.setHorizontalHeaderLabels(["ХОДИМ", "ЛОЙИҲА"])
+        self.employee_table.setHorizontalHeaderLabels(["ХОДИМ", "ЖИНОИЙ ИШ"])
         self.employee_table.setRowCount(len(self.assignments))
 
         self.table.clear()
@@ -1690,7 +1690,7 @@ class StatisticsPage(QWidget):
 
         project_filter_box = QVBoxLayout()
         project_filter_box.setSpacing(4)
-        project_filter_label = QLabel("Лойиҳа")
+        project_filter_label = QLabel("Жиноий иш")
         project_filter_label.setObjectName("fieldLabel")
         project_filter_box.addWidget(project_filter_label)
         self.project_combo = QComboBox()
@@ -1713,9 +1713,9 @@ class StatisticsPage(QWidget):
 
         show_button = button("Натижани кўрсатиш", "primary", self.load)
         selection_filter_layout.addWidget(show_button, 0, Qt.AlignBottom)
-        export_button = button("Экселга юклаш", "secondary", self.export_report)
+        export_button = button("PDF юклаш", "secondary", self.export_report)
         export_button.setToolTip(
-            "Танланган давр ҳисоботини кунлик жадвал кўринишида сақлаш"
+            "Жадвал ва диаграммаларни PDF ҳисоботига сақлаш"
         )
         selection_filter_layout.addWidget(export_button, 0, Qt.AlignBottom)
         filter_root.addLayout(selection_filter_layout)
@@ -1880,15 +1880,15 @@ class StatisticsPage(QWidget):
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Ҳисоботни сақлаш",
-            f"ҳисобот_{date_from}_{date_to}.xlsx",
-            "Эксел файли (*.xlsx)",
+            f"ҳисобот_{date_from}_{date_to}.pdf",
+            "PDF файли (*.pdf)",
         )
         if not file_path:
             return
-        if not file_path.lower().endswith(".xlsx"):
-            file_path += ".xlsx"
+        if not file_path.lower().endswith(".pdf"):
+            file_path += ".pdf"
 
-        headers = ["ХОДИМ", "ЛОЙИҲА"] + [
+        headers = ["ХОДИМ", "ЖИНОИЙ ИШ"] + [
             row["name"].upper() for row in work_types
         ] + ["ЖАМИ"]
         report_rows = []
@@ -1912,15 +1912,43 @@ class StatisticsPage(QWidget):
             f"Давр: {self.date_from.date().toString('dd.MM.yyyy')} — "
             f"{self.date_to.date().toString('dd.MM.yyyy')}   |   "
             f"Бўлим: {self.department_combo.currentText()}   |   "
-            f"Лойиҳа: {self.project_combo.currentText()}"
+            f"Жиноий иш: {self.project_combo.currentText()}"
         )
+        daily_by_date = self.db.period_daily_totals(
+            date_from,
+            date_to,
+            self.selected_department_id,
+            self.selected_project_id,
+            self.selected_work_type_id,
+        )
+        selected_date = self.date_from.date()
+        date_count = selected_date.daysTo(self.date_to.date()) + 1
+        daily_dates = [selected_date.addDays(offset) for offset in range(date_count)]
+        daily_labels = [day.toString("dd.MM") for day in daily_dates]
+        daily_totals = [
+            daily_by_date.get(day.toString("yyyy-MM-dd"), 0) for day in daily_dates
+        ]
+        employee_totals = {}
+        for assignment in assignments:
+            employee_name = f'{assignment["last_name"]} {assignment["first_name"]}'
+            employee_totals[employee_name] = employee_totals.get(employee_name, 0) + sum(
+                values.get(
+                    (assignment["employee_id"], assignment["project_id"], work_type["id"]),
+                    0,
+                )
+                for work_type in work_types
+            )
         try:
-            write_period_report(
+            write_period_pdf(
                 file_path,
                 "Бажарилган ишлар ҳисоботи",
                 metadata,
                 headers,
                 report_rows,
+                daily_labels,
+                daily_totals,
+                list(employee_totals.items()),
+                date_count,
             )
         except OSError as error:
             QMessageBox.critical(
@@ -2003,7 +2031,7 @@ class StatisticsPage(QWidget):
             self.selected_project_id = None
         self.project_combo.blockSignals(True)
         self.project_combo.clear()
-        self.project_combo.addItem("Барча лойиҳалар", None)
+        self.project_combo.addItem("Барча жиноий ишлар", None)
         for project in sorted(self.projects, key=lambda item: item["name"].casefold()):
             suffix = " (якунланган)" if not project["is_active"] else ""
             self.project_combo.addItem(f'{project["name"]}{suffix}', project["id"])
@@ -2465,7 +2493,7 @@ class MainWindow(QMainWindow):
             ("▦", "Кунлик ҳисоб"),
             ("♙", "Ходимлар"),
             ("▣", "Бўлимлар"),
-            ("◆", "Лойиҳалар"),
+            ("◆", "Жиноий ишлар"),
             ("✓", "Иш турлари"),
         )
         for index, (icon, label) in enumerate(self.nav_items):

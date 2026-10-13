@@ -74,6 +74,12 @@ try:
     assert db.daily_matrix("2099-01-01", 0)[0] == []
     totals = db.employee_totals("2099-01-01", "2099-01-31", department_id)
     assert [(row["id"], row["total"]) for row in totals] == [(employee_id, 3)]
+    assert db.period_daily_totals(
+        "2099-01-01", "2099-01-31", department_id
+    ) == {"2099-01-01": 3}
+    assert db.period_daily_totals(
+        "2099-01-01", "2099-01-31", work_type_id=second_type_id
+    ) == {}
     assert db.employee_daily_totals(employee_id, "2099-01-01", "2099-01-31") == {
         "2099-01-01": 3
     }

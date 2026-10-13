@@ -1,5 +1,4 @@
 import os
-from zipfile import ZipFile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,11 +7,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import database
 import main
 from PySide6.QtCore import QDate
+from PySide6.QtPdf import QPdfDocument
 from PySide6.QtWidgets import QApplication
 
 
 test_database = Path(__file__).resolve().parent / "data" / "ui_smoke_test.db"
-test_report = Path(__file__).resolve().parent / "data" / "ui_smoke_report.xlsx"
+test_report = Path(__file__).resolve().parent / "data" / "ui_smoke_report.pdf"
 test_database.unlink(missing_ok=True)
 test_report.unlink(missing_ok=True)
 app = QApplication([])
@@ -64,7 +64,7 @@ try:
     ]
     assert employee_widths[0] == 56
     assert abs(sum(employee_widths) - window.employees.table.viewport().width()) <= 2
-    assert window.employees.table.horizontalHeaderItem(3).text() == "ЛОЙИҲАЛАРИ"
+    assert window.employees.table.horizontalHeaderItem(3).text() == "ЖИНОИЙ ИШЛАРИ"
     finance_filter = window.employees.department_filter.findData(
         department_ids["Moliya"]
     )
@@ -78,7 +78,7 @@ try:
     window.types.load()
     app.processEvents()
     assert window.departments.table.horizontalHeaderItem(0).text() == "№"
-    assert window.projects.table.horizontalHeaderItem(1).text() == "ЛОЙИҲА"
+    assert window.projects.table.horizontalHeaderItem(1).text() == "ЖИНОИЙ ИШ"
     assert {
         window.projects.table.item(row, 1).text()
         for row in range(window.projects.table.rowCount())
@@ -139,7 +139,7 @@ try:
     assert "\n" in window.daily.table.horizontalHeaderItem(long_work_type_column).text()
     assert window.daily.table.horizontalScrollBar().maximum() > 0
     assert window.daily.employee_table.objectName() == "frozenEmployees"
-    assert window.daily.employee_table.horizontalHeaderItem(1).text() == "ЛОЙИҲА"
+    assert window.daily.employee_table.horizontalHeaderItem(1).text() == "ЖИНОИЙ ИШ"
     assert window.daily.employee_table.item(0, 1).text() == "Yangi ofis"
     window.daily.table.horizontalScrollBar().setValue(
         window.daily.table.horizontalScrollBar().maximum()
@@ -172,16 +172,17 @@ try:
     ):
         window.statistics.export_report()
     assert test_report.exists()
-    with ZipFile(test_report) as report:
-        assert report.testzip() is None
-        sheet = report.read("xl/worksheets/sheet1.xml")
-        assert b"Valiyev Ali" in sheet
-        assert "ХОДИМ".encode("utf-8") in sheet
-        assert "ЛОЙИҲА".encode("utf-8") in sheet
-        assert long_work_type.upper().encode("utf-8") in sheet
-        assert "ЖАМИ".encode("utf-8") in sheet
-        workbook = report.read("xl/workbook.xml")
-        assert "Ҳисобот".encode("utf-8") in workbook
+    report = QPdfDocument()
+    assert report.load(str(test_report)) == QPdfDocument.Error.None_
+    assert report.pageCount() >= 2
+    assert report.pagePointSize(0).width() > report.pagePointSize(0).height()
+    assert report.pagePointSize(1).width() > report.pagePointSize(1).height()
+    assert abs(report.pagePointSize(0).width() - 841.89) < 1
+    assert abs(report.pagePointSize(0).height() - 595.28) < 1
+    report.close()
+    del report
+    app.processEvents()
+    assert test_report.stat().st_size > 10_000
     print("UI_SMOKE_OK")
 finally:
     window.close()

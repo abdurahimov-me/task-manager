@@ -71,7 +71,7 @@ class Database:
                 """
                 INSERT OR IGNORE INTO projects(name,start_date,completed_at,note,is_active)
                 VALUES('Эски маълумотлар','1900-01-01',date('now'),
-                       'Лойиҳа тизими қўшилишидан олдинги ҳисоботлар',0)
+                       'Жиноий иш тизими қўшилишидан олдинги ҳисоботлар',0)
                 """
             )
             legacy_project_id = self.connection.execute(
@@ -478,6 +478,39 @@ class Database:
             """,
             (date_from, date_to, department_id, department_id, project_id, project_id),
         ).fetchall()
+
+    def period_daily_totals(
+        self,
+        date_from,
+        date_to,
+        department_id=None,
+        project_id=None,
+        work_type_id=None,
+    ):
+        rows = self.connection.execute(
+            """
+            SELECT d.work_date,SUM(d.quantity) AS total
+            FROM daily_entries AS d
+            JOIN employees AS e ON e.id=d.employee_id
+            WHERE d.work_date BETWEEN ? AND ?
+              AND (? IS NULL OR e.department_id=?)
+              AND (? IS NULL OR d.project_id=?)
+              AND (? IS NULL OR d.work_type_id=?)
+            GROUP BY d.work_date
+            ORDER BY d.work_date
+            """,
+            (
+                date_from,
+                date_to,
+                department_id,
+                department_id,
+                project_id,
+                project_id,
+                work_type_id,
+                work_type_id,
+            ),
+        ).fetchall()
+        return {row["work_date"]: int(row["total"]) for row in rows}
 
     def employee_daily_totals(self, employee_id, date_from, date_to, project_id=None):
         rows = self.connection.execute(
