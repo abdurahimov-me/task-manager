@@ -1,5 +1,4 @@
 from pathlib import Path
-from math import ceil
 
 from PySide6.QtCore import QMarginsF, QPointF, QRectF, Qt
 from PySide6.QtGui import (
@@ -39,7 +38,7 @@ def _text(painter, rect, value, size=9, color=TEXT, bold=False, flags=None):
 
 
 def _elided(painter, value, width):
-    metrics = QFontMetrics(painter.font())
+    metrics = QFontMetrics(painter.font(), painter.device())
     return metrics.elidedText(str(value), Qt.ElideRight, max(1, int(width)))
 
 
@@ -112,38 +111,9 @@ def _draw_table(painter, width, y, height, headers, rows, continuation=False):
     if continuation:
         _text(painter, QRectF(0, y - 28, width, 24), "ЖАДВАЛ ДАВОМИ", 10, INK, True)
     column_widths = _column_widths(width, len(headers))
-    header_font_size = 7 if len(headers) <= 10 else 6
-    header_font = _font(header_font_size, True)
-    header_metrics = QFontMetrics(header_font)
-    header_text_flags = Qt.AlignCenter | Qt.TextWordWrap | Qt.TextWrapAnywhere
-    required_header_height = 0
-    has_wrapped_header = False
-    for header, column_width in zip(headers, column_widths):
-        available_width = max(1, int(column_width - 12))
-        text_width = header_metrics.horizontalAdvance(str(header))
-        has_wrapped_header = has_wrapped_header or text_width > available_width
-        wrapped_height = header_metrics.boundingRect(
-            0,
-            0,
-            available_width,
-            400,
-            int(header_text_flags),
-            str(header),
-        ).height()
-        estimated_lines = max(
-            1,
-            ceil(text_width / available_width),
-        )
-        estimated_height = estimated_lines * header_metrics.lineSpacing()
-        required_header_height = max(
-            required_header_height,
-            wrapped_height,
-            estimated_height,
-        )
-    header_height = min(
-        120,
-        max(90 if has_wrapped_header else 46, required_header_height + 14),
-    )
+    header_font_size = 5 if len(headers) <= 10 else 4
+    header_text_flags = Qt.AlignCenter | Qt.AlignVCenter | Qt.TextWrapAnywhere
+    header_height = 46
     row_height = min(32, max(20, (height - header_height) / max(1, len(rows))))
     x = 0
     for header, column_width in zip(headers, column_widths):
