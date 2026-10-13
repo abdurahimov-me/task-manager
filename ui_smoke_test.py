@@ -64,7 +64,7 @@ try:
     ]
     assert employee_widths[0] == 56
     assert abs(sum(employee_widths) - window.employees.table.viewport().width()) <= 2
-    assert window.employees.table.horizontalHeaderItem(3).text() == "LOYIHALARI"
+    assert window.employees.table.horizontalHeaderItem(3).text() == "ЛОЙИҲАЛАРИ"
     finance_filter = window.employees.department_filter.findData(
         department_ids["Moliya"]
     )
@@ -78,7 +78,7 @@ try:
     window.types.load()
     app.processEvents()
     assert window.departments.table.horizontalHeaderItem(0).text() == "№"
-    assert window.projects.table.horizontalHeaderItem(1).text() == "LOYIHA"
+    assert window.projects.table.horizontalHeaderItem(1).text() == "ЛОЙИҲА"
     assert {
         window.projects.table.item(row, 1).text()
         for row in range(window.projects.table.rowCount())
@@ -139,7 +139,7 @@ try:
     assert "\n" in window.daily.table.horizontalHeaderItem(long_work_type_column).text()
     assert window.daily.table.horizontalScrollBar().maximum() > 0
     assert window.daily.employee_table.objectName() == "frozenEmployees"
-    assert window.daily.employee_table.horizontalHeaderItem(1).text() == "LOYIHA"
+    assert window.daily.employee_table.horizontalHeaderItem(1).text() == "ЛОЙИҲА"
     assert window.daily.employee_table.item(0, 1).text() == "Yangi ofis"
     window.daily.table.horizontalScrollBar().setValue(
         window.daily.table.horizontalScrollBar().maximum()

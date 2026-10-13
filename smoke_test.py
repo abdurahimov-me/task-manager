@@ -173,7 +173,7 @@ try:
     assert migrated_entry["quantity"] == 5
     assert migrated.connection.execute(
         "SELECT name FROM projects WHERE id=?", (migrated_entry["project_id"],)
-    ).fetchone()["name"] == "Eski maʼlumotlar"
+    ).fetchone()["name"] == "Эски маълумотлар"
     migrated.connection.close()
 finally:
     for path in (test_database, migration_database):

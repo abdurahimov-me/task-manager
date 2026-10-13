@@ -70,12 +70,12 @@ class Database:
             self.connection.execute(
                 """
                 INSERT OR IGNORE INTO projects(name,start_date,completed_at,note,is_active)
-                VALUES('Eski ma\u02bclumotlar','1900-01-01',date('now'),
-                       'Loyiha tizimi qo\u02bbshilishidan oldingi hisobotlar',0)
+                VALUES('Эски маълумотлар','1900-01-01',date('now'),
+                       'Лойиҳа тизими қўшилишидан олдинги ҳисоботлар',0)
                 """
             )
             legacy_project_id = self.connection.execute(
-                "SELECT id FROM projects WHERE name=?", ("Eski ma\u02bclumotlar",)
+                "SELECT id FROM projects WHERE name=?", ("Эски маълумотлар",)
             ).fetchone()[0]
 
         self.connection.execute("ALTER TABLE daily_entries RENAME TO daily_entries_legacy")

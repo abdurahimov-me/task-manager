@@ -28,7 +28,7 @@ with patch("main.Database", return_value=db):
 try:
     assert window.statistics.employee_chart.objectName() == "chartFallback"
     assert window.statistics.daily_chart.objectName() == "chartFallback"
-    assert "Excel" in window.statistics.employee_chart.text()
+    assert "Эксел" in window.statistics.employee_chart.text()
 finally:
     window.close()
     db.connection.close()
