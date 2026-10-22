@@ -344,20 +344,32 @@ QTableWidget::item:selected {
     color: #1d2939;
 }
 QTableWidget#frozenEmployees {
-    background: #f8fafc;
-    alternate-background-color: #f4f7fb;
+    background: #ffffff;
+    alternate-background-color: #ffffff;
     border: 0;
-    border-right: 2px solid #98a2b3;
+    border-right: 2px solid #aeb7c6;
+    gridline-color: #dfe3ea;
 }
-QTableWidget#frozenEmployees::item {
-    background: #f8fafc;
+QTableWidget#frozenEmployees::item,
+QTableWidget#dailyValues::item {
     color: #1d2939;
+    border: 0;
+    padding: 8px 12px;
+}
+QTableWidget#frozenEmployees QHeaderView::section,
+QTableWidget#dailyValues QHeaderView::section {
+    background: #f8fafc;
+    color: #475467;
+    border: 0;
+    border-right: 1px solid #d0d5dd;
+    border-bottom: 1px solid #cfd5df;
     font-weight: 600;
 }
-QTableWidget#frozenEmployees QHeaderView::section {
-    background: #eef4ff;
-    color: #2459c4;
-    border-right: 2px solid #98a2b3;
+QTableWidget#dailyValues {
+    background: #ffffff;
+    alternate-background-color: #fafbfc;
+    border: 0;
+    gridline-color: #dfe3ea;
 }
 QHeaderView {
     background: #f9fafb;
@@ -711,7 +723,11 @@ class EntityDialog(QDialog):
         action = "Таҳрирлаш" if row else "Янги қўшиш"
         self.setWindowTitle(f"{noun} — {action}")
         self.setModal(True)
-        self.setMinimumWidth(430)
+        if kind == "employees":
+            self.setMinimumSize(820, 520)
+            self.resize(880, 590)
+        else:
+            self.setMinimumWidth(430)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(26, 24, 26, 22)
@@ -725,8 +741,20 @@ class EntityDialog(QDialog):
         root.addWidget(description)
 
         if kind == "employees":
-            self.first = self.add_field(root, "Исм *", row["first_name"] if row else "")
-            self.last = self.add_field(root, "Фамилия *", row["last_name"] if row else "")
+            employee_content = QHBoxLayout()
+            employee_content.setSpacing(26)
+
+            details_panel = QVBoxLayout()
+            details_panel.setSpacing(10)
+            details_title = QLabel("Ходим маълумотлари")
+            details_title.setObjectName("sectionTitle")
+            details_panel.addWidget(details_title)
+            self.first = self.add_field(
+                details_panel, "Исм *", row["first_name"] if row else ""
+            )
+            self.last = self.add_field(
+                details_panel, "Фамилия *", row["last_name"] if row else ""
+            )
             department_label = QLabel("Бўлим *")
             department_label.setObjectName("fieldLabel")
             self.department = QComboBox()
@@ -748,11 +776,15 @@ class EntityDialog(QDialog):
                 )
             selected_index = self.department.findData(current_department_id)
             self.department.setCurrentIndex(max(0, selected_index))
-            root.addWidget(department_label)
-            root.addWidget(self.department)
+            details_panel.addWidget(department_label)
+            details_panel.addWidget(self.department)
+            details_panel.addStretch()
+
+            projects_panel = QVBoxLayout()
+            projects_panel.setSpacing(10)
             projects_label = QLabel("Бириктирилган жиноий ишлар")
-            projects_label.setObjectName("fieldLabel")
-            root.addWidget(projects_label)
+            projects_label.setObjectName("sectionTitle")
+            projects_panel.addWidget(projects_label)
             selected_project_ids = db.employee_project_ids(row["id"]) if row else set()
             projects = [
                 project
@@ -761,11 +793,11 @@ class EntityDialog(QDialog):
             ]
             self.project_checks = []
             project_scroll = QScrollArea()
+            self.project_scroll = project_scroll
             project_scroll.setObjectName("projectPicker")
             project_scroll.setWidgetResizable(True)
             project_scroll.setFrameShape(QFrame.NoFrame)
-            project_scroll.setMinimumHeight(90)
-            project_scroll.setMaximumHeight(150)
+            project_scroll.setMinimumHeight(310)
             project_scroll.viewport().setStyleSheet("background: #f9fafb;")
             project_box = QWidget()
             project_box.setObjectName("projectPickerContent")
@@ -800,7 +832,10 @@ class EntityDialog(QDialog):
                 "QScrollArea#projectPicker { background:#f9fafb; "
                 "border:1px solid #eaecf0; border-radius:8px; }"
             )
-            root.addWidget(project_scroll)
+            projects_panel.addWidget(project_scroll, 1)
+            employee_content.addLayout(details_panel, 1)
+            employee_content.addLayout(projects_panel, 1)
+            root.addLayout(employee_content, 1)
         elif kind == "projects":
             self.name = self.add_field(root, "Жиноий иш номи *", row["name"] if row else "")
             start_label = QLabel("Бошланиш санаси *")
@@ -1014,13 +1049,24 @@ class CrudPage(QWidget):
         table_header_layout.addWidget(table_title)
         table_header_layout.addWidget(self.count_label)
         table_header_layout.addStretch()
-        if kind == "work_types":
-            move_up = button("↑  Юқорига", "quiet", lambda: self.move_work_type(-1))
-            move_up.setToolTip("Танланган иш турини бир поғона юқорига кўчириш")
-            move_down = button("↓  Пастга", "quiet", lambda: self.move_work_type(1))
-            move_down.setToolTip("Танланган иш турини бир поғона пастга кўчириш")
+        if kind in {"employees", "departments", "projects", "work_types"}:
+            entity_names = {
+                "employees": "ходимни",
+                "departments": "бўлимни",
+                "projects": "жиноий ишни",
+                "work_types": "иш турини",
+            }
+            entity_name = entity_names[kind]
+            move_up = button("↑  Юқорига", "quiet", lambda: self.move_ordered(-1))
+            move_up.setToolTip(f"Танланган {entity_name} бир поғона юқорига кўчириш")
+            move_down = button("↓  Пастга", "quiet", lambda: self.move_ordered(1))
+            move_down.setToolTip(f"Танланган {entity_name} бир поғона пастга кўчириш")
             table_header_layout.addWidget(move_up)
             table_header_layout.addWidget(move_down)
+        if kind == "projects":
+            table_header_layout.addWidget(
+                button("Ходимларни кўриш", "secondary", self.show_project_employees)
+            )
         table_header_layout.addWidget(button("Таҳрирлаш", "secondary", self.edit))
         table_header_layout.addWidget(
             button(
@@ -1061,10 +1107,7 @@ class CrudPage(QWidget):
         if not self.department_filter:
             return
         selected_department_id = self.department_filter.currentData()
-        departments = sorted(
-            self.db.all("departments", True),
-            key=lambda department: department["name"].casefold(),
-        )
+        departments = self.db.all("departments", True)
         self.department_filter.blockSignals(True)
         self.department_filter.clear()
         self.department_filter.addItem("Барча бўлимлар", None)
@@ -1118,7 +1161,7 @@ class CrudPage(QWidget):
                 created_date = QDate.fromString(row["created_at"][:10], Qt.ISODate)
                 values.append(created_date.toString("dd.MM.yyyy"))
             elif self.kind == "projects":
-                values.append(row["employee_names"] or "Бириктирилмаган")
+                values.append(f'{row["employee_count"]} та')
                 start_date = QDate.fromString(row["start_date"], Qt.ISODate)
                 values.append(start_date.toString("dd.MM.yyyy"))
                 values.append(
@@ -1190,12 +1233,15 @@ class CrudPage(QWidget):
             return None
         return self.rows[index]
 
-    def move_work_type(self, direction):
+    def move_ordered(self, direction):
         row = self.selected()
         if not row:
             return
-        if not self.db.move_work_type(
-            row["id"], direction, include_inactive=self.inactive.isChecked()
+        if not self.db.move_ordered(
+            self.kind,
+            row["id"],
+            direction,
+            include_inactive=self.inactive.isChecked(),
         ):
             return
         selected_id = row["id"]
@@ -1205,6 +1251,61 @@ class CrudPage(QWidget):
                 self.table.setCurrentCell(row_index, 1)
                 break
         self.changed.emit()
+
+    def show_project_employees(self):
+        project = self.selected()
+        if not project:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Жиноий иш ходимлари")
+        dialog.setModal(True)
+        dialog.setMinimumSize(520, 380)
+
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(26, 24, 26, 22)
+        root.setSpacing(14)
+        title = QLabel(project["name"])
+        title.setObjectName("dialogTitle")
+        employees = self.db.project_employee_rows(project["id"])
+        count = QLabel(f"Бириктирилган ходимлар: {len(employees)} та")
+        count.setObjectName("muted")
+        root.addWidget(title)
+        root.addWidget(count)
+
+        employee_scroll = QScrollArea()
+        employee_scroll.setWidgetResizable(True)
+        employee_scroll.setFrameShape(QFrame.NoFrame)
+        employee_scroll.setStyleSheet(
+            "QScrollArea { background:#f9fafb; border:1px solid #eaecf0; "
+            "border-radius:8px; }"
+        )
+        employee_box = QWidget()
+        employee_box.setStyleSheet("background:#f9fafb;")
+        employee_layout = QVBoxLayout(employee_box)
+        employee_layout.setContentsMargins(14, 12, 14, 12)
+        employee_layout.setSpacing(8)
+        if employees:
+            for index, employee in enumerate(employees, 1):
+                department = employee["department_name"] or "Бўлимсиз"
+                label = QLabel(
+                    f'{index}. {employee["last_name"]} {employee["first_name"]}  ·  {department}'
+                )
+                label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                employee_layout.addWidget(label)
+        else:
+            empty = QLabel("Бу жиноий ишга ҳали ходим бириктирилмаган.")
+            empty.setObjectName("muted")
+            empty.setAlignment(Qt.AlignCenter)
+            employee_layout.addWidget(empty, 1)
+        employee_layout.addStretch()
+        employee_scroll.setWidget(employee_box)
+        root.addWidget(employee_scroll, 1)
+
+        actions = QHBoxLayout()
+        actions.addStretch()
+        actions.addWidget(button("Ёпиш", "primary", dialog.accept))
+        root.addLayout(actions)
+        dialog.exec()
 
     def add(self):
         dialog = EntityDialog(self.kind, parent=self, db=self.db)
@@ -1392,6 +1493,7 @@ class DailyPage(QWidget):
         self.employee_table = QTableWidget()
         self.employee_table.setObjectName("frozenEmployees")
         configure_table(self.employee_table)
+        self.employee_table.setShowGrid(True)
         self.employee_table.setColumnCount(2)
         self.employee_table.setHorizontalHeaderLabels(["ХОДИМ", "ЖИНОИЙ ИШ"])
         self.employee_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -1401,7 +1503,9 @@ class DailyPage(QWidget):
         self.employee_table.setFixedWidth(self.FROZEN_COLUMNS_WIDTH)
 
         self.table = QuantityTable()
+        self.table.setObjectName("dailyValues")
         configure_table(self.table)
+        self.table.setShowGrid(True)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.table.horizontalHeader().setMinimumSectionSize(120)
@@ -1505,7 +1609,9 @@ class DailyPage(QWidget):
             name = QTableWidgetItem(name_text)
             name.setFlags(name.flags() & ~Qt.ItemIsEditable)
             name.setForeground(QColor("#1d2939"))
-            name.setBackground(QColor("#f4f7fb"))
+            name_font = name.font()
+            name_font.setWeight(QFont.DemiBold)
+            name.setFont(name_font)
             name.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             name.setToolTip(name_text)
             self.employee_table.setItem(row_index, 0, name)
@@ -1526,6 +1632,10 @@ class DailyPage(QWidget):
                 item = QTableWidgetItem(str(quantity))
                 item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row_index, column, item)
+
+        for employee_rows in employee_groups.values():
+            if len(employee_rows) > 1:
+                self.employee_table.setSpan(employee_rows[0], 0, len(employee_rows), 1)
 
         table_header = self.table.horizontalHeader()
         table_header.setFixedHeight(self.HEADER_HEIGHT)
@@ -1623,7 +1733,26 @@ class StatisticsPage(QWidget):
         self.chart_tooltip.setAttribute(Qt.WA_ShowWithoutActivating)
         self.chart_tooltip.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-        root = QVBoxLayout(self)
+        page_layout = QVBoxLayout(self)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+
+        self.page_scroll = QScrollArea()
+        self.page_scroll.setObjectName("statisticsPageScroll")
+        self.page_scroll.setWidgetResizable(True)
+        self.page_scroll.setFrameShape(QFrame.NoFrame)
+        self.page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.page_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.page_scroll.setStyleSheet(
+            "QScrollArea#statisticsPageScroll { background: #f7f8fc; border: 0; }"
+            "QScrollArea#statisticsPageScroll > QWidget > QWidget { background: #f7f8fc; }"
+        )
+        page_layout.addWidget(self.page_scroll)
+
+        page_content = QWidget()
+        page_content.setObjectName("page")
+        self.page_scroll.setWidget(page_content)
+        root = QVBoxLayout(page_content)
         root.setContentsMargins(34, 27, 34, 26)
         root.setSpacing(14)
 
@@ -1747,10 +1876,8 @@ class StatisticsPage(QWidget):
             "Устунга босинг — ходимнинг кунлик тафсилотлари пастда очилади",
             "Бу даврда бажарилган ишлар йўқ",
             "Бошқа сана оралиғини танланг ёки кунлик ҳисобга маълумот киритинг.",
-            scrollable=True,
-            vertical_scrollable=True,
         )
-        root.addWidget(employee_card, 1)
+        root.addWidget(employee_card)
 
         (
             daily_card,
@@ -1765,9 +1892,8 @@ class StatisticsPage(QWidget):
             "Ходим танланмаган",
             "Юқоридаги графикдан ходим устунини танланг.",
             with_selection=True,
-            scrollable=True,
         )
-        root.addWidget(daily_card, 1)
+        root.addWidget(daily_card)
         for view in (self.employee_chart, self.daily_chart):
             event_target = view.viewport() if hasattr(view, "viewport") else view
             event_target.installEventFilter(self)
@@ -1780,8 +1906,6 @@ class StatisticsPage(QWidget):
         empty_title,
         empty_text,
         with_selection=False,
-        scrollable=False,
-        vertical_scrollable=False,
     ):
         card = QFrame()
         card.setObjectName("surface")
@@ -1828,18 +1952,6 @@ class StatisticsPage(QWidget):
         chart_view.setMouseTracking(True)
         chart_view.setMinimumHeight(160)
         chart_page = chart_view
-        if scrollable and CHARTS_AVAILABLE:
-            chart_page = QScrollArea()
-            chart_page.setFrameShape(QFrame.NoFrame)
-            chart_page.setWidgetResizable(False)
-            chart_page.setVerticalScrollBarPolicy(
-                Qt.ScrollBarAsNeeded if vertical_scrollable else Qt.ScrollBarAlwaysOff
-            )
-            chart_page.setHorizontalScrollBarPolicy(
-                Qt.ScrollBarAlwaysOff if vertical_scrollable else Qt.ScrollBarAsNeeded
-            )
-            chart_page.setWidget(chart_view)
-            chart_page.setStyleSheet("QScrollArea { background: transparent; border: 0; }")
         empty = EmptyState(empty_title, empty_text)
         stack.addWidget(chart_page)
         stack.addWidget(empty)
@@ -2198,15 +2310,16 @@ class StatisticsPage(QWidget):
             bar_set.selectBar(selected_index)
 
     def update_employee_chart_size(self):
-        if not isinstance(self.employee_chart_page, QScrollArea):
+        if not CHARTS_AVAILABLE:
             return
-        viewport = self.employee_chart_page.viewport()
-        required_width = max(1, viewport.width())
+        viewport_width = max(640, self.page_scroll.viewport().width() - 70)
         required_height = max(
-            max(160, viewport.height()),
+            240,
             85 + len(self.chart_employee_rows) * 36,
         )
-        self.employee_chart.setFixedSize(required_width, required_height)
+        self.employee_chart.setFixedSize(viewport_width, required_height)
+        self.employee_stack.setFixedHeight(required_height)
+        self.employee_stack.setMinimumWidth(viewport_width)
 
     def employee_clicked(self, index):
         if not 0 <= index < len(self.chart_employee_rows):
@@ -2364,16 +2477,17 @@ class StatisticsPage(QWidget):
         QTimer.singleShot(0, self.update_daily_chart_size)
 
     def update_daily_chart_size(self):
-        if not isinstance(self.daily_chart_page, QScrollArea):
+        if not CHARTS_AVAILABLE:
             return
-        viewport_width = max(1, self.daily_chart_page.viewport().width())
+        viewport_width = max(640, self.page_scroll.viewport().width() - 70)
         required_width = (
             viewport_width
             if self.daily_number_of_days <= 45
             else max(viewport_width, 130 + self.daily_number_of_days * 22)
         )
-        required_height = max(150, self.daily_chart_page.height() - 12)
-        self.daily_chart.setFixedSize(required_width, required_height)
+        self.daily_chart.setFixedSize(required_width, 300)
+        self.daily_stack.setFixedHeight(300)
+        self.daily_stack.setMinimumWidth(required_width)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

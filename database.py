@@ -18,10 +18,10 @@ class Database:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.executescript("""
-        CREATE TABLE IF NOT EXISTS departments(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY,first_name TEXT NOT NULL,last_name TEXT NOT NULL,department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,phone TEXT NOT NULL DEFAULT '',note TEXT NOT NULL DEFAULT '',is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS departments(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,sort_order INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY,first_name TEXT NOT NULL,last_name TEXT NOT NULL,department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,phone TEXT NOT NULL DEFAULT '',note TEXT NOT NULL DEFAULT '',sort_order INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS work_types(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,unit TEXT NOT NULL DEFAULT 'marta',note TEXT NOT NULL DEFAULT '',sort_order INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS projects(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,start_date TEXT NOT NULL,completed_at TEXT,note TEXT NOT NULL DEFAULT '',is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS projects(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,start_date TEXT NOT NULL,completed_at TEXT,note TEXT NOT NULL DEFAULT '',sort_order INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS project_employees(project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(project_id,employee_id));
         CREATE TABLE IF NOT EXISTS daily_entries(id INTEGER PRIMARY KEY,employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,work_type_id INTEGER NOT NULL REFERENCES work_types(id) ON DELETE RESTRICT,work_date TEXT NOT NULL,quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity>=0),updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(employee_id,project_id,work_type_id,work_date));
         """)
@@ -32,6 +32,9 @@ class Database:
             self.connection.execute(
                 "ALTER TABLE employees ADD COLUMN department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL"
             )
+        self._ensure_sort_order("employees")
+        self._ensure_sort_order("departments")
+        self._ensure_sort_order("projects")
         work_type_columns = {
             row["name"] for row in self.connection.execute("PRAGMA table_info(work_types)")
         }
@@ -53,6 +56,18 @@ class Database:
             "CREATE INDEX IF NOT EXISTS ix_project_employees_employee ON project_employees(employee_id)"
         )
         self.connection.commit()
+
+    def _ensure_sort_order(self, table):
+        columns = {
+            row["name"] for row in self.connection.execute(f"PRAGMA table_info({table})")
+        }
+        if "sort_order" not in columns:
+            self.connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
+            )
+            self.connection.execute(
+                f"UPDATE {table} SET sort_order=id WHERE sort_order=0"
+            )
 
     def _migrate_daily_entries_projects(self):
         columns = {
@@ -122,13 +137,16 @@ class Database:
                 FROM employees AS e
                 LEFT JOIN departments AS d ON d.id = e.department_id
                 {where}
-                ORDER BY e.id DESC
+                ORDER BY e.sort_order, e.id
                 """
             ).fetchall()
         if table == "projects":
             return self.connection.execute(
                 f"""
                 SELECT p.*,
+                       (SELECT COUNT(*)
+                        FROM project_employees AS count_pe
+                        WHERE count_pe.project_id=p.id) AS employee_count,
                        COALESCE((
                            SELECT GROUP_CONCAT(e.first_name || ' ' || e.last_name, ', ')
                            FROM project_employees AS pe
@@ -137,19 +155,24 @@ class Database:
                        ), '') AS employee_names
                 FROM projects AS p
                 {where.replace('is_active', 'p.is_active')}
-                ORDER BY p.is_active DESC, p.id DESC
+                ORDER BY p.sort_order, p.id
                 """
             ).fetchall()
         if table == "work_types":
             return self.connection.execute(
                 f"SELECT * FROM work_types{where} ORDER BY sort_order, id"
             ).fetchall()
+        if table == "departments":
+            return self.connection.execute(
+                f"SELECT * FROM departments{where} ORDER BY sort_order, id"
+            ).fetchall()
         return self.connection.execute(f"SELECT * FROM {table}{where} ORDER BY id DESC").fetchall()
 
     def add_employee(self, first, last, department_id=None, project_ids=None):
+        next_order = self._next_sort_order("employees")
         cursor = self.connection.execute(
-            "INSERT INTO employees(first_name,last_name,department_id) VALUES(?,?,?)",
-            (first.strip(), last.strip(), department_id),
+            "INSERT INTO employees(first_name,last_name,department_id,sort_order) VALUES(?,?,?,?)",
+            (first.strip(), last.strip(), department_id, next_order),
         )
         self.set_employee_projects(cursor.lastrowid, project_ids or [])
         self.connection.commit()
@@ -172,6 +195,19 @@ class Database:
             )
         }
 
+    def project_employee_rows(self, project_id):
+        return self.connection.execute(
+            """
+            SELECT e.id,e.first_name,e.last_name,d.name AS department_name
+            FROM project_employees AS pe
+            JOIN employees AS e ON e.id=pe.employee_id
+            LEFT JOIN departments AS d ON d.id=e.department_id
+            WHERE pe.project_id=?
+            ORDER BY e.sort_order,e.id
+            """,
+            (project_id,),
+        ).fetchall()
+
     def set_employee_projects(self, employee_id, project_ids):
         self.connection.execute(
             "DELETE FROM project_employees WHERE employee_id=?", (employee_id,)
@@ -182,9 +218,10 @@ class Database:
         )
 
     def add_project(self, name, start_date, note=""):
+        next_order = self._next_sort_order("projects")
         self.connection.execute(
-            "INSERT INTO projects(name,start_date,note) VALUES(?,?,?)",
-            (name.strip(), start_date, note.strip()),
+            "INSERT INTO projects(name,start_date,note,sort_order) VALUES(?,?,?,?)",
+            (name.strip(), start_date, note.strip(), next_order),
         )
         self.connection.commit()
 
@@ -209,8 +246,10 @@ class Database:
         self.connection.commit()
 
     def add_department(self, name):
+        next_order = self._next_sort_order("departments")
         self.connection.execute(
-            "INSERT INTO departments(name) VALUES(?)", (name.strip(),)
+            "INSERT INTO departments(name,sort_order) VALUES(?,?)",
+            (name.strip(), next_order),
         )
         self.connection.commit()
 
@@ -221,9 +260,7 @@ class Database:
         self.connection.commit()
 
     def add_work_type(self, name):
-        next_order = self.connection.execute(
-            "SELECT COALESCE(MAX(sort_order),0)+1 FROM work_types"
-        ).fetchone()[0]
+        next_order = self._next_sort_order("work_types")
         self.connection.execute(
             "INSERT INTO work_types(name,sort_order) VALUES(?,?)",
             (name.strip(), next_order),
@@ -234,9 +271,19 @@ class Database:
         self.connection.execute("UPDATE work_types SET name=? WHERE id=?", (name.strip(),row_id)); self.connection.commit()
 
     def move_work_type(self, row_id, direction, include_inactive=False):
+        return self.move_ordered("work_types", row_id, direction, include_inactive)
+
+    def _next_sort_order(self, table):
+        return self.connection.execute(
+            f"SELECT COALESCE(MAX(sort_order),0)+1 FROM {table}"
+        ).fetchone()[0]
+
+    def move_ordered(self, table, row_id, direction, include_inactive=False):
+        if table not in {"employees", "departments", "projects", "work_types"}:
+            raise ValueError(f"Unsupported ordered table: {table}")
         where = "" if include_inactive else " WHERE is_active=1"
         rows = self.connection.execute(
-            f"SELECT id,sort_order FROM work_types{where} ORDER BY sort_order,id"
+            f"SELECT id,sort_order FROM {table}{where} ORDER BY sort_order,id"
         ).fetchall()
         current_index = next(
             (index for index, row in enumerate(rows) if row["id"] == row_id), None
@@ -248,11 +295,11 @@ class Database:
             return False
         current, target = rows[current_index], rows[target_index]
         self.connection.execute(
-            "UPDATE work_types SET sort_order=? WHERE id=?",
+            f"UPDATE {table} SET sort_order=? WHERE id=?",
             (target["sort_order"], current["id"]),
         )
         self.connection.execute(
-            "UPDATE work_types SET sort_order=? WHERE id=?",
+            f"UPDATE {table} SET sort_order=? WHERE id=?",
             (current["sort_order"], target["id"]),
         )
         self.connection.commit()
@@ -303,7 +350,7 @@ class Database:
                     SELECT 1 FROM employees AS e
                     WHERE e.department_id=d.id AND e.is_active=1
                )
-            ORDER BY d.name
+            ORDER BY d.sort_order, d.id
             """
         ).fetchall()
         has_unassigned = bool(
@@ -320,7 +367,7 @@ class Database:
                 SELECT e.*, NULL AS department_name
                 FROM employees AS e
                 WHERE e.is_active=1 AND e.department_id IS NULL
-                ORDER BY e.id DESC
+                ORDER BY e.sort_order, e.id
                 """
             ).fetchall()
         elif department_id is None:
@@ -332,7 +379,7 @@ class Database:
                 FROM employees AS e
                 LEFT JOIN departments AS d ON d.id=e.department_id
                 WHERE e.is_active=1 AND e.department_id=?
-                ORDER BY e.id DESC
+                ORDER BY e.sort_order, e.id
                 """,
                 (department_id,),
             ).fetchall()
@@ -355,7 +402,7 @@ class Database:
                             WHERE de.employee_id=e.id AND de.project_id=p.id
                               AND de.work_date=?)
                 WHERE e.id IN ({placeholders})
-                ORDER BY e.last_name,e.first_name,p.name
+                ORDER BY e.sort_order,e.id,p.sort_order,p.id
                 """,
                 (work_date, work_date, work_date, *employee_ids),
             ).fetchall()
@@ -411,7 +458,7 @@ class Database:
               AND (? IS NULL OR e.department_id=?)
               AND (? IS NULL OR p.id=?)
             GROUP BY e.id,e.first_name,e.last_name,p.id,p.name
-            ORDER BY e.last_name,e.first_name,p.name
+            ORDER BY e.sort_order,e.id,p.sort_order,p.id
             """,
             (
                 date_to,

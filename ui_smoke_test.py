@@ -8,7 +8,7 @@ import database
 import main
 from PySide6.QtCore import QDate
 from PySide6.QtPdf import QPdfDocument
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 
 test_database = Path(__file__).resolve().parent / "data" / "ui_smoke_test.db"
@@ -33,6 +33,10 @@ try:
     db.add_project("Angren ombori", QDate.currentDate().addDays(-20).toString("yyyy-MM-dd"))
     project_ids = {row["name"]: row["id"] for row in db.all("projects", False)}
     project_id = project_ids["Yangi ofis"]
+    employee_dialog = main.EntityDialog("employees", db=db)
+    assert employee_dialog.minimumWidth() >= 820
+    assert employee_dialog.project_scroll.minimumHeight() >= 300
+    employee_dialog.close()
     db.add_employee("Ali", "Valiyev", department_ids["Savdo"], list(project_ids.values()))
     db.add_employee("Sami", "Karimov", department_ids["Moliya"], [project_id])
     long_work_type = "Juda uzun nomli ish turi hisoboti"
@@ -88,8 +92,12 @@ try:
     assert window.types.table.columnWidth(0) == 56
     moved_type_id = window.types.rows[0]["id"]
     window.types.table.setCurrentCell(0, 1)
-    window.types.move_work_type(1)
+    window.types.move_ordered(1)
     assert db.all("work_types", False)[1]["id"] == moved_type_id
+    moved_project_id = window.projects.rows[0]["id"]
+    window.projects.table.setCurrentCell(0, 1)
+    window.projects.move_ordered(1)
+    assert db.all("projects", False)[1]["id"] == moved_project_id
     assert abs(
         sum(window.departments.table.columnWidth(column) for column in range(3))
         - window.departments.table.viewport().width()
@@ -120,7 +128,7 @@ try:
         if window.daily.employee_table.item(row, 0).text() == "Valiyev Ali"
     ]
     assert len(ali_rows) == 2
-    assert all(window.daily.employee_table.rowSpan(row, 0) == 1 for row in ali_rows)
+    assert window.daily.employee_table.rowSpan(ali_rows[0], 0) == 2
     assert {
         window.daily.employee_table.item(row, 1).text()
         for row in ali_rows
@@ -140,7 +148,7 @@ try:
     assert window.daily.table.horizontalScrollBar().maximum() > 0
     assert window.daily.employee_table.objectName() == "frozenEmployees"
     assert window.daily.employee_table.horizontalHeaderItem(1).text() == "ЖИНОИЙ ИШ"
-    assert window.daily.employee_table.item(0, 1).text() == "Yangi ofis"
+    assert window.daily.employee_table.item(0, 1).text() == "Angren ombori"
     window.daily.table.horizontalScrollBar().setValue(
         window.daily.table.horizontalScrollBar().maximum()
     )
@@ -165,7 +173,8 @@ try:
     assert window.statistics.total_metric.value.text() == "34"
     assert window.statistics.employee_metric.value.text() == "31"
     assert window.statistics.employee_chart.height() >= 85 + 31 * 36
-    assert window.statistics.employee_chart_page.verticalScrollBar().maximum() > 0
+    assert not isinstance(window.statistics.employee_chart_page, QScrollArea)
+    assert window.statistics.page_scroll.verticalScrollBar().maximum() > 0
     with (
         patch("main.QFileDialog.getSaveFileName", return_value=(str(test_report), "")),
         patch("main.QMessageBox.information"),

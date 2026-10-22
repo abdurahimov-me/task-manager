@@ -115,6 +115,17 @@ def _draw_table(painter, width, y, height, headers, rows, continuation=False):
     header_text_flags = Qt.AlignCenter | Qt.AlignVCenter | Qt.TextWrapAnywhere
     header_height = 46
     row_height = min(32, max(20, (height - header_height) / max(1, len(rows))))
+    employee_spans = {}
+    row_index = 0
+    while row_index < len(rows):
+        span = 1
+        while (
+            row_index + span < len(rows)
+            and str(rows[row_index + span][0]) == str(rows[row_index][0])
+        ):
+            span += 1
+        employee_spans[row_index] = span
+        row_index += span
     x = 0
     for header, column_width in zip(headers, column_widths):
         rect = QRectF(x, y, column_width, header_height)
@@ -136,7 +147,15 @@ def _draw_table(painter, width, y, height, headers, rows, continuation=False):
         x = 0
         top = y + header_height + row_index * row_height
         for column_index, (value, column_width) in enumerate(zip(row, column_widths)):
-            rect = QRectF(x, top, column_width, row_height)
+            if column_index == 0 and row_index not in employee_spans:
+                x += column_width
+                continue
+            cell_height = (
+                row_height * employee_spans[row_index]
+                if column_index == 0
+                else row_height
+            )
+            rect = QRectF(x, top, column_width, cell_height)
             painter.fillRect(rect, QColor("#ffffff"))
             painter.setPen(QPen(QColor("#000000"), 1))
             painter.drawRect(rect)
@@ -149,7 +168,7 @@ def _draw_table(painter, width, y, height, headers, rows, continuation=False):
                 7,
                 TEXT,
                 column_index == len(row) - 1,
-                (Qt.AlignLeft if column_index < 2 else Qt.AlignCenter) | Qt.AlignVCenter,
+                Qt.AlignCenter | Qt.AlignVCenter,
             )
             x += column_width
 
@@ -299,7 +318,7 @@ def write_period_pdf(
     while remaining:
         chunks.append(remaining[:31])
         remaining = remaining[31:]
-    total_pages = 2 + max(0, len(chunks) - 1)
+    total_pages = len(chunks) + 1
 
     try:
         painter.fillRect(QRectF(0, 0, width, height), QColor("#ffffff"))
@@ -310,16 +329,34 @@ def write_period_pdf(
             _text(
                 painter,
                 QRectF(0, height - 48, width, 20),
-                "Жадвалнинг қолган қисми 3-саҳифадан давом этади.",
+                "Жадвалнинг қолган қисми кейинги саҳифада давом этади.",
                 7,
                 MUTED,
                 flags=Qt.AlignRight | Qt.AlignVCenter,
             )
         _page_footer(painter, width, height)
 
+        for page_index, chunk in enumerate(chunks[1:], 2):
+            writer.newPage()
+            painter.fillRect(QRectF(0, 0, width, height), QColor("#ffffff"))
+            _page_header(painter, width, title, metadata, page_index, total_pages)
+            _draw_table(
+                painter,
+                width,
+                110,
+                height - 150,
+                headers,
+                chunk,
+                continuation=True,
+            )
+            _page_footer(painter, width, height)
+
+        chart_page = len(chunks) + 1
         writer.newPage()
         painter.fillRect(QRectF(0, 0, width, height), QColor("#ffffff"))
-        _page_header(painter, width, "ДИАГРАММАЛАР", metadata, 2, total_pages)
+        _page_header(
+            painter, width, "ДИАГРАММАЛАР", metadata, chart_page, total_pages
+        )
         available = height - 126
         gap = 18
         chart_height = (available - gap) / 2
@@ -335,20 +372,5 @@ def write_period_pdf(
             employee_totals,
         )
         _page_footer(painter, width, height)
-
-        for page_index, chunk in enumerate(chunks[1:], 3):
-            writer.newPage()
-            painter.fillRect(QRectF(0, 0, width, height), QColor("#ffffff"))
-            _page_header(painter, width, title, metadata, page_index, total_pages)
-            _draw_table(
-                painter,
-                width,
-                110,
-                height - 150,
-                headers,
-                chunk,
-                continuation=True,
-            )
-            _page_footer(painter, width, height)
     finally:
         painter.end()

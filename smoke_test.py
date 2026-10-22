@@ -24,15 +24,48 @@ try:
     zero_project_id = db.connection.execute(
         "SELECT id FROM projects WHERE name='__ZERO_PROJECT__'"
     ).fetchone()[0]
+    assert [row["id"] for row in db.all("projects", False)] == [
+        project_id,
+        zero_project_id,
+    ]
+    assert db.move_ordered("projects", zero_project_id, -1) is True
+    assert [row["id"] for row in db.all("projects", False)] == [
+        zero_project_id,
+        project_id,
+    ]
     db.add_employee(
         "__SMOKE__", "__SMOKE__", department_id, [project_id, zero_project_id]
     )
     db.add_employee("__OTHER__", "__OTHER__", other_department_id, [project_id])
+    assert len(db.project_employee_rows(project_id)) == 2
+    assert db.all("projects", False)[0]["employee_count"] == 1
+    assert db.all("projects", False)[1]["employee_count"] == 2
     db.add_work_type("__SMOKE_TYPE__")
     db.add_work_type("__SECOND_TYPE__")
     employee_id = db.connection.execute(
         "SELECT id FROM employees WHERE first_name='__SMOKE__'"
     ).fetchone()[0]
+    other_employee_id = db.connection.execute(
+        "SELECT id FROM employees WHERE first_name='__OTHER__'"
+    ).fetchone()[0]
+    assert [row["id"] for row in db.all("departments", False)] == [
+        department_id,
+        other_department_id,
+    ]
+    assert db.move_ordered("departments", other_department_id, -1) is True
+    assert [row["id"] for row in db.all("departments", False)] == [
+        other_department_id,
+        department_id,
+    ]
+    assert [row["id"] for row in db.all("employees", False)] == [
+        employee_id,
+        other_employee_id,
+    ]
+    assert db.move_ordered("employees", other_employee_id, -1) is True
+    assert [row["id"] for row in db.all("employees", False)] == [
+        other_employee_id,
+        employee_id,
+    ]
     work_type_id = db.connection.execute(
         "SELECT id FROM work_types WHERE name='__SMOKE_TYPE__'"
     ).fetchone()[0]
@@ -48,9 +81,6 @@ try:
         second_type_id,
         work_type_id,
     ]
-    other_employee_id = db.connection.execute(
-        "SELECT id FROM employees WHERE first_name='__OTHER__'"
-    ).fetchone()[0]
     db.save_quantity(employee_id, project_id, work_type_id, "2099-01-01", 3)
     db.save_quantity(other_employee_id, project_id, work_type_id, "2099-01-01", 7)
     assert db.daily_matrix("2099-01-01", department_id)[2] == {
